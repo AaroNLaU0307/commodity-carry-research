@@ -2,7 +2,7 @@
 
 **Status: FROZEN as of 2026-07-10.** This document supersedes `PREREGISTRATION_TEMPLATE.md` (deleted in the same commit that adds this file). Every design decision below was specified before any computation, data download, signal code, or notebook existed for this project — see the no-alpha-peeking bright line carried over from Phase 0. Deviations from this document follow the protocol in §11 and are logged in `DEVIATIONS.md`, never made silently.
 
-Two `[OPEN]` items surfaced while formalizing this document — genuine mismatches between the governing spec's assumptions and what was actually found in source material, not left for me to resolve. See [`WORKSPACE/PREREG_OPEN_ITEMS.md`](../../_carry-research-workspace/PREREG_OPEN_ITEMS.md) for both, referenced inline at §6 and §5 below.
+Two items surfaced while formalizing this document — genuine mismatches between the governing spec's assumptions and what was actually found in source material — and were left open rather than resolved silently. Both were subsequently closed by an advisor ruling (pre-push, 2026-07-10): §6's inference method (stationary block bootstrap, affirmed as primary rather than a fallback) and §5's fee model (a uniform $2.50/side declared-conservative allowance, replacing the earlier per-row proxy). Full ruling history: [`WORKSPACE/PREREG_OPEN_ITEMS.md`](../../_carry-research-workspace/PREREG_OPEN_ITEMS.md). Since the repo had not yet been pushed when these rulings were made, they are ordinary pre-freeze corrections, not deviations under §11 — the deviations protocol activates at push, not before.
 
 ---
 
@@ -81,7 +81,7 @@ settlement-to-settlement. Futures returns are excess returns by construction (no
 
 **No-trade band: explicitly not inherited, and this is a positive design choice, not an omission.** TSMOM defines a no-trade band parameter (`config.py` L207, `NO_TRADE_BAND = 0.05`, implemented in `src/portfolio.py::apply_no_trade_band()`, L202–229) but **does not apply it** in its main/adopted pipeline — `run_backtest.py` (the live strategy) never calls `apply_no_trade_band()`; the only caller is `cost_analysis.py`, where it was run as a standalone control experiment and rejected: turnover fell only 17.6×→16.0× annual (a 9% reduction) while net Sharpe was *slightly lower at every cost level tested* (`output/COST_AND_TURNOVER_REPORT.md` L32, L66: *"No-trade band did NOT help — honest negative result... the band is not adopted"*). Per the governing brief's own instruction ("if TSMOM applies a no-trade band... inherit it likewise") — TSMOM's applied answer is *no* — so this project inherits that same applied answer: **no no-trade band.** TSMOM's own monthly rebalance frequency (`config.py` L154, `SIGNAL_RESAMPLE = "ME"`) already matches this project's, so no frequency-translation was needed to reach this conclusion.
 
-**Stated purpose (per governing brief, restated here as instructed).** These conventions are inherited rather than independently chosen so that parameter degrees of freedom are eliminated by reusing frozen infrastructure already in production elsewhere in this research program, and so that a later trend-vs-carry comparison (Project B) is a clean like-for-like — any difference in results between that project and this one will not be attributable to different vol-targeting or leverage machinery.
+**Stated purpose (per governing brief, restated here as instructed).** These conventions are inherited rather than independently chosen so that parameter degrees of freedom are eliminated by reusing frozen infrastructure already in production elsewhere in this research program, and so that a later trend-vs-carry comparison (Project B) is a clean like-for-like — any difference in results between that project and this one will not be attributable to different vol-targeting or leverage machinery. This inheritance covers **construction parameters only**; statistical inference is specified per current best practice for serially dependent daily returns, not inherited from TSMOM — see §6.
 
 ---
 
@@ -96,28 +96,34 @@ The dollar-denominated inputs (tick value, fee estimates) are frozen now, in the
 
 **Conservative half-spread:** no systematic per-product bid-ask spread data was found via public search for all 18 products (see below); the formula's own `max(1 tick, ...)` structure means the 1-tick value is the operative floor throughout this table — this is a documented consequence of the formula as specified, not a new assumption.
 
-**Exchange + clearing fee:** a genuine sourcing limitation, logged as `[OPEN]` item 2 in `WORKSPACE/PREREG_OPEN_ITEMS.md`. CME Group's own fee-schedule pages and PDFs blocked automated access this session (multiple `WebFetch` attempts failed with connection resets/timeouts — no Databento or other API call was made; this is public-documentation research only, consistent with Hard Rule 1). The one concrete, dated figure found: CBOT non-member agricultural futures exchange fee = **$2.13/contract**, effective 2025-02-01, plus a **$0.02/contract** non-member NFA regulatory fee — summing to **$2.15/side**. This figure is applied **uniformly as a conservative proxy** across all 18 rows below, pending Aaron's direct verification via CME's own Non-Member Fee Finder tool (a manual, browser-based lookup — not automatable from this session). Source: CME fee-schedule change coverage found via web search (AMP Futures fee-change notice, referencing the CME fee schedule effective 2025-02-01) and NFA's published non-member regulatory fee.
+**All-in fee allowance: $2.50/side, declared conservative.** A uniform, deliberately conservative all-in per-side allowance — exchange fee + clearing fee + NFA regulatory fee + a brokerage allowance — applied identically across all 18 rows below. This is a **declared conservative assumption**, set deliberately above the single verified datum found via public search: CBOT non-member agricultural futures exchange fee $2.13/contract (effective 2025-02-01) plus the NFA's $0.02/contract non-member regulatory fee, summing to $2.15/side (source: CME fee-schedule change coverage found via web search — an AMP Futures fee-change notice referencing the CME schedule effective 2025-02-01 — and NFA's published non-member regulatory fee; CME's own fee-schedule pages and PDFs blocked automated access this session).
 
-| Symbol | Sector | Multiplier | Tick size | Tick value | Exch.+clearing fee/side (proxy) | Source (tick/multiplier) |
+*Rationale.* Where a precise input is unverifiable, the approximation should be biased against the hypothesis, not toward it — a higher assumed cost makes every promotion gate in §6 strictly harder to clear, never easier. The half-spread term (the tick-value columns below, via the formula's `max(1 tick, ...)` floor) dominates the fee term for most rows in this table in any case, and the 2× cost robustness variant (§8 item 6) blankets residual fee uncertainty beyond what any single point estimate — conservative or not — could fully capture.
+
+*Advisor ruling (pre-push, 2026-07-10).* $2.50/side affirmed as the frozen all-in fee allowance — see `WORKSPACE/PREREG_OPEN_ITEMS.md`, item 2 (RESOLVED).
+
+*Forward note.* Exact per-product CME Fee Finder figures may replace this $2.50 allowance later, only via a dated `DEVIATIONS.md` entry made after this repo is pushed (§11/§12) — never as a silent edit. Exception, not exercised this session: had Aaron supplied a verified per-product figure list before this resolution session's commit, those figures would be used directly (cited "supplied by author"), keeping whichever of {$2.50, the supplied figure} is higher per row — the conservative direction is non-negotiable either way. No such list was supplied, so $2.50 stands uniformly.
+
+| Symbol | Sector | Multiplier | Tick size | Tick value | All-in fee/side (declared conservative) | Source (tick/multiplier) |
 |---|---|---|---|---|---|---|
-| CL | Energy | 1,000 bbl | $0.01/bbl | $10.00 | $2.15 | CME Group contract specs |
-| HO | Energy | 42,000 gal | $0.0001/gal | $4.20 | $2.15 | CME Group contract specs |
-| RB | Energy | 42,000 gal | $0.0001/gal | $4.20 | $2.15 | CME Group contract specs |
-| NG | Energy | 10,000 MMBtu | $0.001/MMBtu | $10.00 | $2.15 | CME Group contract specs |
-| GC | Metals | 100 troy oz | $0.10/oz | $10.00 | $2.15 | CME Group contract specs |
-| SI | Metals | 5,000 troy oz | $0.005/oz | $25.00 | $2.15 | CME Group contract specs |
-| HG | Metals | 25,000 lb | $0.0005/lb | $12.50 | $2.15 | Ironbeam contract-spec page (cross-checked; an initial secondary source had this off by 10×) |
-| PL | Metals | 50 troy oz | $0.10/oz | $5.00 | $2.15 | CME Group contract specs |
-| PA | Metals | 100 troy oz | $0.50/oz | $50.00 | $2.15 | Barchart contract-spec page (cross-checked against conflicting secondary sources that cited $10 — CME-adjacent sources and Barchart agree on $50) |
-| ZC | Grains | 5,000 bu | $0.0025/bu (¼¢) | $12.50 | $2.15 | CME Group contract specs |
-| ZS | Grains | 5,000 bu | $0.0025/bu (¼¢) | $12.50 | $2.15 | CME Group contract specs |
-| ZW | Grains | 5,000 bu | $0.0025/bu (¼¢) | $12.50 | $2.15 | Standard CBOT grain contract structure — not independently fetched this session, inferred from the identical, independently-confirmed structure of ZC/ZS/KE. Flag if this project ever needs certainty beyond "standard CBOT convention." |
-| ZM | Grains | 100 short tons | $0.10/ton | $10.00 | $2.15 | CME Group contract specs |
-| ZL | Grains | 60,000 lb | $0.0001/lb | $6.00 | $2.15 | CME Group contract specs |
-| KE | Grains | 5,000 bu | $0.0025/bu (¼¢) | $12.50 | $2.15 | Barchart contract-spec page |
-| LE | Livestock | 40,000 lb | $0.00025/lb | $10.00 | $2.15 | Cross-checked via the GF/HE consistency pattern (40,000 lb × $0.00025 = $10.00); an initial secondary source had this off by 100× |
-| HE | Livestock | 40,000 lb | $0.00025/lb | $10.00 | $2.15 | CME Group contract specs |
-| GF | Livestock | 50,000 lb | $0.00025/lb | $12.50 | $2.15 | Web search, resolving an initial conflicting secondary source |
+| CL | Energy | 1,000 bbl | $0.01/bbl | $10.00 | $2.50 | CME Group contract specs |
+| HO | Energy | 42,000 gal | $0.0001/gal | $4.20 | $2.50 | CME Group contract specs |
+| RB | Energy | 42,000 gal | $0.0001/gal | $4.20 | $2.50 | CME Group contract specs |
+| NG | Energy | 10,000 MMBtu | $0.001/MMBtu | $10.00 | $2.50 | CME Group contract specs |
+| GC | Metals | 100 troy oz | $0.10/oz | $10.00 | $2.50 | CME Group contract specs |
+| SI | Metals | 5,000 troy oz | $0.005/oz | $25.00 | $2.50 | CME Group contract specs |
+| HG | Metals | 25,000 lb | $0.0005/lb | $12.50 | $2.50 | Ironbeam contract-spec page (cross-checked; an initial secondary source had this off by 10×) |
+| PL | Metals | 50 troy oz | $0.10/oz | $5.00 | $2.50 | CME Group contract specs |
+| PA | Metals | 100 troy oz | $0.50/oz | $50.00 | $2.50 | Barchart contract-spec page (cross-checked against conflicting secondary sources that cited $10 — CME-adjacent sources and Barchart agree on $50) |
+| ZC | Grains | 5,000 bu | $0.0025/bu (¼¢) | $12.50 | $2.50 | CME Group contract specs |
+| ZS | Grains | 5,000 bu | $0.0025/bu (¼¢) | $12.50 | $2.50 | CME Group contract specs |
+| ZW | Grains | 5,000 bu | $0.0025/bu (¼¢) | $12.50 | $2.50 | Standard CBOT grain contract structure — not independently fetched this session, inferred from the identical, independently-confirmed structure of ZC/ZS/KE. Flag if this project ever needs certainty beyond "standard CBOT convention." |
+| ZM | Grains | 100 short tons | $0.10/ton | $10.00 | $2.50 | CME Group contract specs |
+| ZL | Grains | 60,000 lb | $0.0001/lb | $6.00 | $2.50 | CME Group contract specs |
+| KE | Grains | 5,000 bu | $0.0025/bu (¼¢) | $12.50 | $2.50 | Barchart contract-spec page |
+| LE | Livestock | 40,000 lb | $0.00025/lb | $10.00 | $2.50 | Cross-checked via the GF/HE consistency pattern (40,000 lb × $0.00025 = $10.00); an initial secondary source had this off by 100× |
+| HE | Livestock | 40,000 lb | $0.00025/lb | $10.00 | $2.50 | CME Group contract specs |
+| GF | Livestock | 50,000 lb | $0.00025/lb | $12.50 | $2.50 | Web search, resolving an initial conflicting secondary source |
 
 The 2× cost table required by robustness item 6 (§8) is this table with every fee/tick-floor dollar figure doubled — computed at Phase 1c time, not a second frozen table.
 
@@ -129,11 +135,13 @@ The 2× cost table required by robustness item 6 (§8) is this table with every 
 
 **Primary statistic:** annualized net Sharpe ratio.
 
-**Inference method — `[OPEN]` item 1, see `WORKSPACE/PREREG_OPEN_ITEMS.md`.** The governing brief specifies "stationary block bootstrap on daily net returns — mirror the TSMOM repo's bootstrap convention... verbatim with citation; fallback if absent: stationary bootstrap, expected block length 21 trading days, 10,000 replications, 3 recorded seeds." A full search of `multi-asset-tsmom-research` (`src/validation.py`, `config.py`, `src/seasonality.py`, `src/xsmom_stats.py`, and every `research/*/PREREGISTRATION.md`) found **no stationary bootstrap anywhere in that repo** — zero hits for "stationary" or "circular" block-bootstrap terminology. What actually exists:
-- The convention that produces TSMOM's own headline Sharpe/return confidence interval is an **ordinary (IID) bootstrap** — no block structure at all (`src/validation.py::bootstrap_ci()`, L20–57; docstring L27: *"IID bootstrap of monthly returns"*), n=10,000 (`config.py` L198, `BOOTSTRAP_N=10000`), 95% CI (`config.py` L200, `CI_LEVEL=95`), single fixed seed 7 (`config.py` L142, `RANDOM_SEED=7`).
-- A **moving-block bootstrap** (a different, named method from "stationary") exists but only in three *secondary/robustness* studies, each with its own block length: seasonality (10 trading days, `config.py` L323), XSMOM decomposition (12 months, `src/xsmom_stats.py`), yield-spread (the forward horizon `h`). None of these compute the core promotion-gate Sharpe CI in their respective studies.
+**Inference method: stationary block bootstrap — expected block length 21 trading days, 10,000 replications, 3 recorded seeds.** This is the pre-registered primary inference method for daily net returns of both H1 and H2, fixed in this specification before any data was acquired for this project. The 3 seeds and their individual outcomes (not just their average) are recorded in the Phase 1c output.
 
-Since a stationary block bootstrap is genuinely absent (not merely under-documented), this triggers the governing brief's own pre-written fallback exactly as specified, rather than a decision made here: **stationary bootstrap, expected block length 21 trading days, 10,000 replications, 3 recorded seeds** on daily net returns for each of H1 and H2. The 3 seeds and their outcomes will be individually recorded in the Phase 1c output, not just their average. `[OPEN]` item 1 flags this for Aaron in case the actual intent was to mirror TSMOM's moving-block convention instead (and if so, which of its three block-length variants) — the fallback stands as written in this document unless and until that is revisited, since revisiting it now, mid-formalization, based on which result "looks better" is exactly what §11's deviations protocol exists to prevent.
+*Provenance note, kept for honesty.* Construction conventions (vol estimator, vol target, leverage caps, dynamic deleveraging) are inherited verbatim from `multi-asset-tsmom-research`, per §4. Inference methods are specified **per-study**, not inherited — a full search of that repo (`src/validation.py`, `config.py`, `src/seasonality.py`, `src/xsmom_stats.py`, and every `research/*/PREREGISTRATION.md`) confirms it has no stationary-bootstrap counterpart to inherit in the first place: TSMOM's own core Sharpe/return confidence interval — the number treated as its confirmed edge — comes from an **ordinary (IID) bootstrap**, no block structure at all (`src/validation.py::bootstrap_ci()`, L20–57; docstring L27: *"IID bootstrap of monthly returns"*; n=10,000, `config.py` L198; 95% CI, `config.py` L200; seed=7, `config.py` L142). TSMOM does use a **moving-block bootstrap** (a distinct, differently-named method from "stationary" — fixed block length rather than Politis–Romano's random geometric length) in three *secondary/robustness* studies, each with its own block length: seasonality (10 trading days, `config.py` L323), XSMOM decomposition (12 months, `src/xsmom_stats.py`), yield-spread (the forward horizon `h`). None of these compute a core promotion-gate statistic in their respective studies.
+
+*Rationale.* Daily strategy returns are serially dependent even under volatility targeting — the vol-targeting scalar (§4) adjusts slowly (a 60-day rolling window) relative to daily return autocorrelation, so it does not remove the dependence that a naive IID resampling would ignore. A stationary block bootstrap is the conservative choice for Sharpe inference under this kind of dependence, and — per the advisor ruling below — this choice was fixed in the specification before any data was acquired, not selected in response to what TSMOM happened to have on hand.
+
+*Advisor ruling (pre-push, 2026-07-10).* Affirmed as the pre-registered primary inference method, not treated as a fallback triggered by TSMOM's absence of a matching convention — see `WORKSPACE/PREREG_OPEN_ITEMS.md`, item 1 (RESOLVED).
 
 **Promotion gate per hypothesis — ALL must hold:**
 1. BH-FDR-adjusted bootstrap p-value passes at q = 0.10.
