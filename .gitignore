@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Raw licensed/vendor data is never committed -- checksums and provenance
+# manifests are (see data/README.md). Keep this exclusion broad.
+data/raw/
+data/*
+!data/README.md
+!data/manifest.json
+
+# Credentials -- never committed, regardless of format Aaron happens to use.
+.env
+.env/
+*.env
+**/KEY.txt
+credentials.json
+*.key

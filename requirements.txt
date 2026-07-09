@@ -1,0 +1,5 @@
+databento==0.81.0
+pandas==2.3.3
+numpy==2.5.0
+python-dotenv==1.2.1
+pytest==9.1.1
