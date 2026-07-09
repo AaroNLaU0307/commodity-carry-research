@@ -1,0 +1,106 @@
+{
+  "generated_utc": "2026-07-09T09:57:44.919771+00:00",
+  "dataset": "GLBX.MDP3",
+  "dataset_floor_assumed": "2010-06-06",
+  "full_corpus_projection_usd": {
+    "ohlcv-1d": 44.643946737051,
+    "statistics": 20.757709443569,
+    "definition": 25.256725274026
+  },
+  "downloadable_subtotal_usd": 65.40165618062,
+  "full_future_total_usd": 90.658381454646,
+  "per_symbol_probe": {
+    "CL.FUT": {
+      "sector": "energy",
+      "first_row_in_probe_window": "2010-06-06 00:00:00+00:00",
+      "probe_window": ["2010-06-06", "2020-01-01"]
+    },
+    "HO.FUT": {
+      "sector": "energy",
+      "first_row_in_probe_window": "2010-06-06 00:00:00+00:00",
+      "probe_window": ["2010-06-06", "2020-01-01"]
+    },
+    "RB.FUT": {
+      "sector": "energy",
+      "first_row_in_probe_window": "2010-06-06 00:00:00+00:00",
+      "probe_window": ["2010-06-06", "2020-01-01"]
+    },
+    "NG.FUT": {
+      "sector": "energy",
+      "first_row_in_probe_window": "2010-06-06 00:00:00+00:00",
+      "probe_window": ["2010-06-06", "2020-01-01"]
+    },
+    "GC.FUT": {
+      "sector": "metals",
+      "first_row_in_probe_window": "2010-06-06 00:00:00+00:00",
+      "probe_window": ["2010-06-06", "2020-01-01"]
+    },
+    "SI.FUT": {
+      "sector": "metals",
+      "first_row_in_probe_window": "2010-06-06 00:00:00+00:00",
+      "probe_window": ["2010-06-06", "2020-01-01"]
+    },
+    "HG.FUT": {
+      "sector": "metals",
+      "first_row_in_probe_window": "2010-06-06 00:00:00+00:00",
+      "probe_window": ["2010-06-06", "2020-01-01"]
+    },
+    "PL.FUT": {
+      "sector": "metals",
+      "first_row_in_probe_window": "2010-06-06 00:00:00+00:00",
+      "probe_window": ["2010-06-06", "2020-01-01"]
+    },
+    "PA.FUT": {
+      "sector": "metals",
+      "first_row_in_probe_window": "2010-06-06 00:00:00+00:00",
+      "probe_window": ["2010-06-06", "2020-01-01"]
+    },
+    "ZC.FUT": {
+      "sector": "grains",
+      "first_row_in_probe_window": "2010-06-06 00:00:00+00:00",
+      "probe_window": ["2010-06-06", "2020-01-01"]
+    },
+    "ZS.FUT": {
+      "sector": "grains",
+      "first_row_in_probe_window": "2010-06-06 00:00:00+00:00",
+      "probe_window": ["2010-06-06", "2020-01-01"]
+    },
+    "ZW.FUT": {
+      "sector": "grains",
+      "first_row_in_probe_window": "2010-06-06 00:00:00+00:00",
+      "probe_window": ["2010-06-06", "2020-01-01"]
+    },
+    "ZM.FUT": {
+      "sector": "grains",
+      "first_row_in_probe_window": "2010-06-06 00:00:00+00:00",
+      "probe_window": ["2010-06-06", "2020-01-01"]
+    },
+    "ZL.FUT": {
+      "sector": "grains",
+      "first_row_in_probe_window": "2010-06-06 00:00:00+00:00",
+      "probe_window": ["2010-06-06", "2020-01-01"]
+    },
+    "KE.FUT": {
+      "sector": "grains",
+      "first_row_in_probe_window": "2013-12-16 00:00:00+00:00",
+      "probe_window": ["2010-06-06", "2020-01-01"]
+    },
+    "LE.FUT": {
+      "sector": "livestock",
+      "first_row_in_probe_window": "2010-06-07 00:00:00+00:00",
+      "probe_window": ["2010-06-06", "2020-01-01"]
+    },
+    "HE.FUT": {
+      "sector": "livestock",
+      "first_row_in_probe_window": "2010-06-07 00:00:00+00:00",
+      "probe_window": ["2010-06-06", "2020-01-01"]
+    },
+    "GF.FUT": {
+      "sector": "livestock",
+      "first_row_in_probe_window": "2010-06-07 00:00:00+00:00",
+      "probe_window": ["2010-06-06", "2020-01-01"]
+    }
+  },
+  "real_spend_cumulative_usd": 0.000178366896,
+  "quote_cumulative_usd": 90.6585598215419
+}
