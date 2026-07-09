@@ -45,3 +45,20 @@ Two tracks: QUOTE rows (get_cost, never billed, unrestricted) and REAL SPEND row
 | 37 | 2026-07-09T09:57:36.297342+00:00 | REAL SPEND | get_range (actual pull) | probe [HE.FUT]: dataset=GLBX.MDP3, symbols=['HE.FUT'], stype_in=parent, schema=ohlcv-1d, start=2010-06-06, end=2020-01-01, limit=1 | 0.000010 | 0.000168 |  |
 | 38 | 2026-07-09T09:57:37.999528+00:00 | QUOTE | get_cost (pre-pull check) | probe [GF.FUT]: dataset=GLBX.MDP3, symbols=['GF.FUT'], stype_in=parent, schema=ohlcv-1d, start=2010-06-06, end=2020-01-01, limit=1 | 0.000010 | 90.658560 |  |
 | 39 | 2026-07-09T09:57:44.913697+00:00 | REAL SPEND | get_range (actual pull) | probe [GF.FUT]: dataset=GLBX.MDP3, symbols=['GF.FUT'], stype_in=parent, schema=ohlcv-1d, start=2010-06-06, end=2020-01-01, limit=1 | 0.000010 | 0.000178 |  |
+
+### Phase 1a corpus pull -- session start (UTC): 2026-07-09T23:00:36.319058+00:00
+| 40 | 2026-07-09T23:00:37.775399+00:00 | QUOTE | get_cost (Phase 1a re-quote) | schema=ohlcv-1d symbols=18 start=2010-06-06 end=2026-07-01 | 44.643947 | 135.302507 |  |
+| 41 | 2026-07-09T23:00:39.286419+00:00 | QUOTE | get_cost (Phase 1a re-quote) | schema=statistics symbols=18 start=2010-06-06 end=2026-07-01 | 20.757709 | 156.060216 |  |
+| 42 | 2026-07-09T23:00:40.503327+00:00 | QUOTE | get_cost (Phase 1a re-quote) | schema=definition symbols=18 start=2010-06-06 end=2026-07-01 | 25.256725 | 181.316941 |  |
+| 43 | 2026-07-09T23:03:47.660182+00:00 | REAL SPEND | get_range (Phase 1a corpus pull, actual) | schema=ohlcv-1d symbols=18 start=2010-06-06 end=2026-07-01 path=ohlcv-1d.dbn.zst | 44.643947 | 44.644125 |  |
+
+STOP: BentoError during pull of schema=statistics: 504 The remote gateway timed out.
+
+### Phase 1a retry (statistics, definition) -- 2026-07-09T23:06:38.395427+00:00
+
+STOP: statistics failed 3 attempts, last error: 504 The remote gateway timed out.
+
+### Phase 1a retry #2 (definition unchunked; statistics chunked yearly) -- 2026-07-09T23:11:43.494546+00:00
+
+definition unchunked attempt failed: 504 The remote gateway timed out. -- will need its own retry
+| 45 | 2026-07-09T23:12:47.419757+00:00 | QUOTE | get_cost (Phase 1a retry#2, statistics chunk) | schema=statistics symbols=18 start=2010-06-06 end=2011-01-01 | 0.432013 | 181.748954 |  |
