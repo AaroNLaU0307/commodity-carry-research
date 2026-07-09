@@ -148,6 +148,12 @@ This figure is **awaiting Aaron's written approval** before the actual corpus is
 
 This is the one item from the Pass 2 kickoff's execution order not yet closed. Everything else in that kickoff (key hygiene, cost preview, per-symbol probe, resolving both open PASS(A) sub-criteria, the Phase 1 projection, SAMPLE_AUDIT.md, the final verdict, and the repo scaffold below) is complete.
 
+#### Reconciliation closure — 2026-07-10
+
+The starting credit balance was not captured before the Pass 2 session began (the table above sat "pending" since). The post-session Billing page, checked now, shows **$125.00 remaining credits and $0.00 balance due** — consistent with the ledger's real-spend total of $0.000178 within ordinary display rounding (a Billing page showing dollars-and-cents cannot distinguish $125.00 exactly from $124.999822). **Reconciliation is closed on that basis.** The honest limitation: this confirms the ledger's real-spend figure is not contradicted by the Billing page, but it is not a bit-for-bit reconciliation of a captured starting balance against a captured ending balance the way the original Pass 2 kickoff specified — that specific check can no longer be performed retroactively since the starting figure was never recorded. If this precision ever matters again, capture the starting balance *before* the session that will spend against it, not after.
+
+Separately, noted here per instruction: the Databento API key used in the Pass 2 session was rotated after that session concluded. No part of any key value — old or new — is referenced anywhere in this document or repo.
+
 ### Open items carried forward
 
 1. **KE's shorter history (~12.6 vs ~16.1 years).** A real parameter choice for the pre-registration: either accept 2013-12-16 as the universe-wide common start date (costs ~3.5 years on the other 17 symbols), or run KE on a staggered window. Not a Phase 0 blocker.
