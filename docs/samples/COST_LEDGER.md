@@ -62,3 +62,70 @@ STOP: statistics failed 3 attempts, last error: 504 The remote gateway timed out
 
 definition unchunked attempt failed: 504 The remote gateway timed out. -- will need its own retry
 | 45 | 2026-07-09T23:12:47.419757+00:00 | QUOTE | get_cost (Phase 1a retry#2, statistics chunk) | schema=statistics symbols=18 start=2010-06-06 end=2011-01-01 | 0.432013 | 181.748954 |  |
+| 46 | 2026-07-10T00:16:23.712900+00:00 | REAL SPEND | get_range (Phase 1a retry#2, statistics chunk, actual) | schema=statistics symbols=18 start=2010-06-06 end=2011-01-01 path=statistics_2010-06-06_2011-01-01.dbn.zst | 0.432013 | 45.076138 |  |
+| 47 | 2026-07-10T00:16:25.635923+00:00 | QUOTE | get_cost (Phase 1a retry#2, statistics chunk) | schema=statistics symbols=18 start=2011-01-01 end=2012-01-01 | 0.790831 | 182.539785 |  |
+
+statistics chunk 2011-01-01..2012-01-01 failed: Error streaming response: Response ended prematurely
+| 48 | 2026-07-10T00:50:00.371136+00:00 | QUOTE | get_cost (Phase 1a retry#2, statistics chunk) | schema=statistics symbols=18 start=2012-01-01 end=2013-01-01 | 0.659588 | 183.199373 |  |
+| 49 | 2026-07-10T01:52:41.171362+00:00 | REAL SPEND | get_range (Phase 1a retry#2, statistics chunk, actual) | schema=statistics symbols=18 start=2012-01-01 end=2013-01-01 path=statistics_2012-01-01_2013-01-01.dbn.zst | 0.659588 | 45.735726 |  |
+| 50 | 2026-07-10T01:52:44.798277+00:00 | QUOTE | get_cost (Phase 1a retry#2, statistics chunk) | schema=statistics symbols=18 start=2013-01-01 end=2014-01-01 | 0.717631 | 183.917004 |  |
+| 51 | 2026-07-10T02:46:30.459783+00:00 | REAL SPEND | get_range (Phase 1a retry#2, statistics chunk, actual) | schema=statistics symbols=18 start=2013-01-01 end=2014-01-01 path=statistics_2013-01-01_2014-01-01.dbn.zst | 0.717631 | 46.453357 |  |
+| 52 | 2026-07-10T02:46:31.919397+00:00 | QUOTE | get_cost (Phase 1a retry#2, statistics chunk) | schema=statistics symbols=18 start=2014-01-01 end=2015-01-01 | 0.758321 | 184.675326 |  |
+
+statistics chunk 2014-01-01..2015-01-01 failed: Error streaming response: Response ended prematurely
+| 53 | 2026-07-10T03:45:22.347779+00:00 | QUOTE | get_cost (Phase 1a retry#2, statistics chunk) | schema=statistics symbols=18 start=2015-01-01 end=2016-01-01 | 0.911303 | 185.586629 |  |
+| 54 | 2026-07-10T04:49:35.255073+00:00 | REAL SPEND | get_range (Phase 1a retry#2, statistics chunk, actual) | schema=statistics symbols=18 start=2015-01-01 end=2016-01-01 path=statistics_2015-01-01_2016-01-01.dbn.zst | 0.911303 | 47.364661 |  |
+| 55 | 2026-07-10T04:49:57.169548+00:00 | QUOTE | get_cost (Phase 1a retry#2, statistics chunk) | schema=statistics symbols=18 start=2016-01-01 end=2017-01-01 | 1.373427 | 186.960056 |  |
+
+statistics chunk 2016-01-01..2017-01-01 failed: 504 The remote gateway timed out.
+| 56 | 2026-07-10T04:51:03.142494+00:00 | QUOTE | get_cost (Phase 1a retry#2, statistics chunk) | schema=statistics symbols=18 start=2017-01-01 end=2018-01-01 | 1.261575 | 188.221631 |  |
+
+### Phase 1a follow-up session -- inventory & reconciliation, 2026-07-10T05:40:00+00:00 (approx, session start)
+
+**Leftover process from session 1 was still alive** (PID 12920, matching the exact start timestamp of the "Phase 1a retry #2" run) and had continued working through statistics chunks unattended for ~6.5 hours after session 1 ended. Stopped cleanly this session (Stop-Process) once confirmed identified, since Step 2 of this session's brief mandates switching to the batch-job API for all remaining work -- running the old synchronous script concurrently with new batch jobs would risk ledger race conditions and billing ambiguity on top of what's already unresolved below.
+
+**Inventory as found (before any deletion):**
+
+| Chunk | File size (bytes) | Ledger status | Classification |
+|---|---|---|---|
+| ohlcv-1d (full range) | 107,229,003 | REAL SPEND row 43, $44.643947 | Confirmed complete; SHA-256 re-verified this session, matches data/MANIFEST.md exactly |
+| statistics 2010-06-06..2011-01-01 | 114,164,811 | REAL SPEND row 46, $0.432013 | Confirmed complete and billed |
+| statistics 2011-01-01..2012-01-01 | 95,283,524 | QUOTE row 47 ($0.790831) only -- client error "Response ended prematurely", no REAL SPEND logged | **Ambiguous**: real bytes clearly transferred (95MB), but transfer did not complete cleanly. Cannot determine from the client side alone whether Databento billed for the partial delivery. |
+| statistics 2012-01-01..2013-01-01 | 165,856,063 | REAL SPEND row 49, $0.659588 | Confirmed complete and billed |
+| statistics 2013-01-01..2014-01-01 | 173,505,255 | REAL SPEND row 51, $0.717631 | Confirmed complete and billed |
+| statistics 2014-01-01..2015-01-01 | 176,919,370 | QUOTE row 52 ($0.758321) only -- same "Response ended prematurely" error, no REAL SPEND logged | **Ambiguous**, same reasoning as the 2011-2012 chunk |
+| statistics 2015-01-01..2016-01-01 | 231,384,865 | REAL SPEND row 54, $0.911303 | Confirmed complete and billed |
+| statistics 2016-01-01..2017-01-01 | *(no file created)* | QUOTE row 55 ($1.373427) only -- clean `504 gateway timeout`, zero bytes streamed | Confirmed NOT delivered, confirmed NOT billed (no data ever left Databento's side) |
+| statistics 2017-01-01..2018-01-01 | 254,610,660 (frozen at kill) | QUOTE row 56 ($1.261575) only -- in-flight when the leftover process was stopped this session | **Ambiguous**, same reasoning as the other two partial-transfer chunks (real bytes transferred, transfer not completed cleanly, this time by a deliberate kill rather than a client-side error, which does not change what may have been billed server-side) |
+
+**Reconciliation:**
+- Confirmed billed (ledger REAL SPEND rows): **$47.364661** (ohlcv-1d $44.643947 + 4 complete statistics chunks $2.720535).
+- Ambiguous, worst-case additional if all three partial transfers were in fact billed for bytes delivered: 2011-2012 ($0.790831) + 2014-2015 ($0.758321) + 2017-2018 ($1.261575) = **$2.810727**.
+- Confirmed not billed: 2016-2017 ($1.373427, no data delivered).
+- **Worst-case cumulative-billed-so-far: $50.175388.**
+
+**Completion plan (Step 2): one fresh, comprehensive batch job per schema for the full locked range** (`statistics`: 2010-06-06 to 2026-07-01 exclusive; `definition`: same), rather than trying to salvage the 3 ambiguous partial files or stitch together the 4 confirmed chunks with a batch-job continuation. Per the governing brief's own "simplicity beats salvage at these dollar amounts": the incremental cost of re-pulling the ~4 years already confirmed-clean is a few dollars against a $100 ceiling, and a single atomic, verifiably-complete file per schema is safer than reconciling partial provenance across a patchwork of chunk files with mixed confidence. The 3 ambiguous partial files and the 4 confirmed-complete chunk files are all superseded by this plan and will be removed (see the deletion log immediately below for the partials; the confirmed-complete chunks are kept until the fresh full-range files are verified successful, then removed as redundant).
+
+**Ceiling check:** worst-case cumulative-billed-so-far ($50.175388) + projected fresh full-range quotes (~$20.76 statistics + ~$25.26 definition, per the Pass 2-era estimate, to be re-confirmed via real get_cost calls before submission) ≈ **$96.20 worst case**, comfortably under the **$100 CUMULATIVE_CEILING**. Real get_cost quotes will be logged and re-checked against the ceiling before any batch job is actually submitted, per standing guardrails. Plan proceeds.
+
+**Note on POST_PULL_BALANCE:** Step 1.2 permits asking Aaron for the portal's current remaining-credit figure "if needed to pin down what the partial chunks cost." Not asked mid-session here, since the worst-case bound above already fits the ceiling regardless of how the 3 ambiguous chunks resolve -- deferred to the standard end-of-pull POST_PULL_BALANCE reconciliation (Step 2.4), where it will also resolve this ambiguity definitively.
+
+**Deletion log (stale/ambiguous partial files, checksummed before removal, per Step 1.4):**
+
+| File | Size at deletion (bytes) | SHA-256 at deletion |
+|---|---|---|
+| `statistics_2011-01-01_2012-01-01.dbn.zst` | 95,283,524 | `70a90d1b78b75a9663083bd5cfb42e18d8df8c260d2909a682496b249d0a17d7` |
+| `statistics_2014-01-01_2015-01-01.dbn.zst` | 176,919,370 | `bb86a88bcb690230e94f3c57b60221a93442d6a44ac1e0b823e2c5162e78fdf9` |
+| `statistics_2017-01-01_2018-01-01.dbn.zst` | 254,610,660 | `012c1c212edf469402277e69ae3bf89d07e70a65475a6ac2bff71ef8cfb59405` |
+
+These are recorded for the record only (in case the ambiguous-billing question ever needs revisiting); none are treated as usable data going forward -- superseded by the fresh full-range batch-job pull in Step 2.
+
+
+### Phase 1a follow-up -- batch job submission, 2026-07-10T05:44:25.095802+00:00
+
+| Schema | Quoted (USD) | Job ID | Submitted |
+|---|---|---|---|
+| statistics | 20.757709 | `GLBX-20260710-E8YMQQJMA7` | yes -- billed on submission per SDK docstring, logged as REAL SPEND now |
+| definition | 25.256725 | `GLBX-20260710-BN6B8WQRWH` | yes -- billed on submission per SDK docstring, logged as REAL SPEND now |
+
+Running cumulative after this session's batch submissions (worst-case basis): $96.189823

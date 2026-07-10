@@ -1,8 +1,22 @@
 """
-Builds data/MANIFEST.md from whatever is actually in DATA_DIR plus the
-Phase 1a pull summary JSON (request parameters, per-file SHA-256, sizes).
-Run only after all expected files are present -- this script does not pull
-anything itself, it only inventories and checksums what has already landed.
+Builds data/MANIFEST.md from whatever is actually in DATA_DIR. Run only
+after all expected files for a schema are present -- this script does not
+pull anything itself, it only inventories and checksums what has already
+landed.
+
+Handles two delivery shapes per schema:
+  - single file:      DATA_DIR/{schema}.dbn.zst           (ohlcv-1d)
+  - per-day directory: DATA_DIR/{schema}/*.dbn.zst          (definition --
+    Databento's batch-job default is to split by day; concatenating the
+    compressed per-day files into one is not valid DBN, so they are kept
+    as delivered -- see scripts/phase1a_batch_poll_download.py's docstring)
+
+For a per-day directory, every individual file is still checksummed (real
+per-file integrity), but data/MANIFEST.md records an aggregate "manifest
+hash" -- SHA-256 of the sorted "filename:sha256\\n" lines joined -- rather
+than a 5,000+ row markdown table. The full per-file list is written
+alongside it in WORKSPACE (not committed; reproducible from DATA_DIR at any
+time) for anyone who needs to verify one specific day's file.
 """
 import hashlib
 import json
@@ -12,8 +26,16 @@ from pathlib import Path
 WORKSPACE = Path(r"C:\Users\Aaron\OneDrive\Desktop\Quant trade\_carry-research-workspace")
 REPO = Path(r"C:\Users\Aaron\OneDrive\Desktop\Quant trade\commodity-carry-research")
 DATA_DIR = Path(r"C:\Users\Aaron\quant-data\commodity-carry")
-PULL_SUMMARY_PATH = WORKSPACE / "phase1a_pull_summary.json"
 MANIFEST_PATH = REPO / "data" / "MANIFEST.md"
+
+# Schemas confirmed fully delivered as of this manifest generation -- see
+# docs/DATA_QA_REPORT.md Sec 0 / addendum for what's actually complete.
+# "statistics" is deliberately absent: still processing server-side
+# (Databento batch job GLBX-20260710-E8YMQQJMA7) as of this snapshot.
+CONFIRMED_COMPLETE_SCHEMAS = {
+    "ohlcv-1d": "single_file",
+    "definition": "per_day_dir",
+}
 
 
 def sha256_of(path: Path) -> str:
@@ -24,24 +46,48 @@ def sha256_of(path: Path) -> str:
     return h.hexdigest()
 
 
-# Only files confirmed complete (a matching REAL SPEND ledger row exists for
-# them) are manifested with a checksum. In-progress downloads are excluded --
-# checksumming a file that's still being written to is a race condition and
-# would record a meaningless, unstable hash. See docs/DATA_QA_REPORT.md Sec 0
-# for which schemas are actually complete as of this snapshot.
-CONFIRMED_COMPLETE_FILES = ["ohlcv-1d.dbn.zst"]
+def manifest_single_file(schema: str):
+    path = DATA_DIR / f"{schema}.dbn.zst"
+    if not path.exists():
+        return None
+    checksum = sha256_of(path)
+    return {
+        "schema": schema, "kind": "single_file", "n_files": 1,
+        "total_bytes": path.stat().st_size,
+        "files": [{"name": path.name, "size": path.stat().st_size, "sha256": checksum}],
+    }
+
+
+def manifest_per_day_dir(schema: str):
+    d = DATA_DIR / schema
+    if not d.is_dir():
+        return None
+    files = sorted(d.glob("*.dbn.zst"))
+    if not files:
+        return None
+    entries = []
+    for f in files:
+        entries.append({"name": f.name, "size": f.stat().st_size, "sha256": sha256_of(f)})
+    joined = "\n".join(f"{e['name']}:{e['sha256']}" for e in entries)
+    aggregate_hash = hashlib.sha256(joined.encode("utf-8")).hexdigest()
+    return {
+        "schema": schema, "kind": "per_day_dir", "n_files": len(entries),
+        "total_bytes": sum(e["size"] for e in entries),
+        "aggregate_sha256": aggregate_hash, "files": entries,
+    }
 
 
 def main():
-    all_files = sorted(DATA_DIR.glob("*.dbn.zst"))
-    files = [f for f in all_files if f.name in CONFIRMED_COMPLETE_FILES]
-    in_progress = [f for f in all_files if f.name not in CONFIRMED_COMPLETE_FILES]
-    if not files:
-        raise SystemExit(f"No confirmed-complete .dbn.zst files found in {DATA_DIR} -- has any pull completed?")
+    results = []
+    for schema, kind in CONFIRMED_COMPLETE_SCHEMAS.items():
+        r = manifest_single_file(schema) if kind == "single_file" else manifest_per_day_dir(schema)
+        if r is None:
+            print(f"WARNING: {schema} ({kind}) expected but not found in {DATA_DIR} -- skipping")
+            continue
+        results.append(r)
 
-    summary = {}
-    if PULL_SUMMARY_PATH.exists():
-        summary = json.loads(PULL_SUMMARY_PATH.read_text(encoding="utf-8"))
+    if not results:
+        raise SystemExit(f"No confirmed-complete schemas found in {DATA_DIR} -- has any pull completed?")
 
     lines = [
         "# Data Provenance Manifest",
@@ -54,64 +100,71 @@ def main():
         "",
         "## Request parameters (locked, PREREGISTRATION.md Sec 2)",
         "",
-        f"- Dataset: `{summary.get('dataset', 'GLBX.MDP3')}`",
-        f"- Symbols: 18 pre-registered CME symbols (parent symbology)",
-        f"- Date range: `{summary.get('start', '2010-06-06')}` (inclusive) to "
-        f"`{summary.get('end_exclusive', '2026-07-01')}` (exclusive) == through "
-        f"2026-06-30 inclusive",
-        f"- Schemas: `ohlcv-1d`, `statistics`, `definition`",
+        "- Dataset: `GLBX.MDP3`",
+        "- Symbols: 18 pre-registered CME symbols (parent symbology)",
+        "- Date range: `2010-06-06` (inclusive) to `2026-07-01` (exclusive) == through "
+        "2026-06-30 inclusive",
+        "- Schemas: `ohlcv-1d`, `statistics`, `definition`",
         "",
         "## Cost",
         "",
-        f"- Total quoted: ${summary.get('total_quote_usd', 'see COST_LEDGER.md'):.6f}"
-        if isinstance(summary.get("total_quote_usd"), float) else
-        "- Total quoted: see `docs/samples/COST_LEDGER.md`",
-        f"- Memo estimate: ${summary.get('memo_estimate_usd', 90.658381):.6f} "
-        f"(delta {summary.get('delta_from_memo', 0):+.2%})"
-        if isinstance(summary.get("delta_from_memo"), float) else "",
-        f"- Full ledger: `docs/samples/COST_LEDGER.md` (continued from the Pass 2 session's rows 1-39)",
+        "See `docs/samples/COST_LEDGER.md` for every quote and every real charge, in order.",
         "",
         "## Files",
         "",
-        "| File | Size (bytes) | SHA-256 |",
-        "|---|---|---|",
     ]
 
-    for f in files:
-        checksum = sha256_of(f)
-        lines.append(f"| `{f.name}` | {f.stat().st_size:,} | `{checksum}` |")
-
-    lines += [
-        "",
-        f"Total confirmed-complete: {len(files)} files, {sum(f.stat().st_size for f in files):,} bytes.",
-        "",
-    ]
-
-    if in_progress:
-        lines += [
-            "## In progress / not yet manifested",
-            "",
-            "These files exist in `DATA_DIR` but are NOT yet confirmed complete "
-            "(no matching REAL SPEND row in `docs/samples/COST_LEDGER.md` as of this "
-            "manifest generation) and are therefore deliberately excluded above -- "
-            "checksumming a file still being written to would record an unstable, "
-            "meaningless hash. See `docs/DATA_QA_REPORT.md` Sec 0 for the full status.",
-            "",
-        ]
-        for f in in_progress:
-            lines.append(f"- `{f.name}` — {f.stat().st_size:,} bytes as of manifest generation, size not final")
+    for r in results:
+        lines.append(f"### `{r['schema']}`")
+        lines.append("")
+        if r["kind"] == "single_file":
+            f = r["files"][0]
+            lines.append("| File | Size (bytes) | SHA-256 |")
+            lines.append("|---|---|---|")
+            lines.append(f"| `{f['name']}` | {f['size']:,} | `{f['sha256']}` |")
+        else:
+            lines.append(
+                f"Delivered as {r['n_files']:,} per-day files (Databento batch-job default "
+                f"split_duration=\"day\"; concatenating independently-compressed DBN streams "
+                f"is not valid, so they are kept as delivered -- see "
+                f"`scripts/phase1a_batch_poll_download.py`)."
+            )
+            lines.append("")
+            lines.append(f"- Total files: {r['n_files']:,}")
+            lines.append(f"- Total bytes: {r['total_bytes']:,}")
+            lines.append(
+                f"- Aggregate SHA-256 (of the sorted `filename:sha256` lines for every "
+                f"individual file, newline-joined): `{r['aggregate_sha256']}`"
+            )
+            lines.append(
+                f"- Full per-file checksum list: `{schema_perfile_path(r['schema']).name}` "
+                f"(WORKSPACE, not committed -- reproducible from `DATA_DIR` at any time; "
+                f"the aggregate hash above is what's committed here as the tamper-evident record)"
+            )
+            perfile_path = schema_perfile_path(r["schema"])
+            perfile_path.write_text(json.dumps(r["files"], indent=2), encoding="utf-8")
         lines.append("")
 
+    total_files = sum(r["n_files"] for r in results)
+    total_bytes = sum(r["total_bytes"] for r in results)
     lines += [
+        f"Total confirmed-complete: {len(results)} schema(s), {total_files:,} file(s), {total_bytes:,} bytes.",
+        "",
+        "## Not yet manifested",
+        "",
+        "- `statistics` -- submitted as a Databento batch job (`GLBX-20260710-E8YMQQJMA7`), "
+        "billed at submission, still processing server-side as of this manifest generation. "
+        "See `docs/DATA_QA_REPORT.md`'s addendum Sec 0 for the current progress reading and "
+        "honest ETA assessment.",
+        "- 4 pre-batch `statistics` yearly-chunk files remain in `DATA_DIR` "
+        "(`statistics_2010-06-06_2011-01-01.dbn.zst` and 3 others) -- confirmed billed "
+        "(`docs/samples/COST_LEDGER.md` rows 46/49/51/54) but superseded by the pending "
+        "full-range batch job per the Step 1 reconciliation plan; kept until that job "
+        "completes and is verified, then removed as redundant. Not manifested here since "
+        "they cover only partial date ranges, not the full locked window.",
+        "",
         "## Notes",
         "",
-        "- `statistics` was split into yearly (or finer) date-range chunks after the "
-        "single full-range request consistently hit a server-side gateway timeout "
-        "(`504`) across multiple attempts; `ohlcv-1d` succeeded as a single request. "
-        "This is a mechanical delivery detail, not a change to what was requested -- "
-        "every chunk covers the same locked whitelist (dataset, schema, symbols), "
-        "just a narrower date sub-range per request. See `docs/samples/COST_LEDGER.md` "
-        "for every chunk's individual quote and actual cost.",
         "- Raw data integrity findings (settlement/OI coverage, gaps, expiry "
         "calendar completeness, spot-checks) are in `docs/DATA_QA_REPORT.md`, not here "
         "-- this manifest is provenance only.",
@@ -119,7 +172,11 @@ def main():
 
     MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
     MANIFEST_PATH.write_text("\n".join(lines), encoding="utf-8")
-    print(f"Wrote {MANIFEST_PATH} covering {len(files)} files.")
+    print(f"Wrote {MANIFEST_PATH} covering {len(results)} schema(s), {total_files:,} file(s).")
+
+
+def schema_perfile_path(schema: str) -> Path:
+    return WORKSPACE / f"manifest_perfile_{schema}.json"
 
 
 if __name__ == "__main__":
