@@ -6,4 +6,22 @@ No entries yet — this file is created alongside the frozen pre-registration, r
 
 ## Log
 
-*(none)*
+### 2026-07-11 — Phase 1b Step 0: one additional diagnostic, three specification completions, two rejected alternatives
+
+Written before any real-data signal computation in this project's history — no carry, return, ranking, or portfolio weight had been computed from real data at the time this entry was made. Authority: "Aaron + advisor, decided blind to results," per the F7 adjudication recorded in `docs/DATA_QA_REPORT.md`'s 2026-07-11 addendum.
+
+**1. Additional non-gating diagnostic (item 11 of §8's robustness suite): ex-PA/PL primary series.**
+Motivated by QA finding F7 (PA and PL show a materially larger unexplained OI-gap residual than the other 16 symbols). The primary H1/H2 series are recomputed with PA and PL excluded from the universe entirely, reported alongside the full-18-symbol primary result with no gating consequence — exactly the same treatment as §8's existing ten items. **`N_trials` is unchanged at 14** per §10's own diagnostics-exclusion rule (item 8–9 precedent: a diagnostic of the primary series is not a new constructed strategy-return series for DSR-deflation purposes, and this one is the same kind of diagnostic, just keyed on a QA finding rather than a jackknife fold).
+
+**2. Newey–West lag for the XS premise t-statistic, fixed at 3.**
+`PREREGISTRATION.md` §7 specifies a Newey–West-adjusted t-statistic for the XS premise's mean Spearman IC but does not pin down the lag order. `src/stats.py::newey_west_tstat()` has always had a default auto-lag (the Newey-West 1994 plug-in rule, `floor(4*(n/100)^(2/9))`), which was appropriate as a general-purpose default when that function was built in Phase 1a (synthetic tests only, no real n). For the actual premise test, the lag is fixed at a pre-declared constant, **3**, rather than left to the data-dependent auto-formula — a monthly IC series with roughly 190 months of history and no expectation of long-memory dependence does not need the auto-formula's larger data-dependent lag, and a fixed constant declared before seeing the real series removes any possibility of the lag choice being tuned to the outcome.
+
+**3. Held-front missing-settlement handling: mark-to-last-settlement, zero return that day, counted and reported, no gate.**
+`PREREGISTRATION.md` §3 defines returns as `r_t = F_front(t) / F_front(t−1) − 1` but does not specify behavior when the held front contract's settlement is missing on a given date (QA §1 found 0.957% of outright bars lack a matching settlement value). Specification: on such a day, the held front's price is marked to its last available settlement (i.e. no return is recorded — the position is treated as flat that day rather than the return being left undefined or backfilled from a different contract), the return for that day is exactly 0.0, and every occurrence is counted and reported in `reports/PREMISE_REPORT.md` / `reports/PRIMARY_REPORT.md`. This is not a gate — it is a data-handling convention needed to make the return series computable at all, declared before running it on real data.
+
+**4. Zero-price guard: HALT on any held-front settlement ≤ 0.**
+If the currently-held front contract's settlement is ≤ 0 on any date, the pipeline halts immediately and reports the event as a finding rather than computing a return through it. This is expected to be silent in practice — CLK0 (the one confirmed negative-settlement instrument in this corpus, F2) was not the OI-determined front on 2020-04-20 (by that date by the roll rule should have already crossed to the next contract ahead of May-contract expiry) — but the guard is real and will actually halt the run if this expectation is wrong. If it fires, that is a discovery about this dataset, not an obstacle to route around.
+
+**Rejected alternatives (considered, not adopted):**
+- **Per-symbol rule forks** (e.g. a volume-based OI fallback specifically for PA/PL, to paper over F7's residual gap) — rejected. A per-symbol special case in the roll rule is exactly the kind of silent, symbol-specific tuning this project's falsification-first discipline exists to prevent, and F7's residual is small enough (171–176 symbol-days out of ~4,990 trading days per symbol, ~3.5%) that the existing hold-on-missing behavior (item 1 above) is adequate without a fork.
+- **Universe amputation** (dropping PA/PL from the study entirely) — rejected. F7 does not rise to a severity that justifies silently shrinking the pre-registered 18-symbol universe; the ex-PA/PL diagnostic (item 1 above) gives the same information as a non-gating, fully-disclosed comparison instead.

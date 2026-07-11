@@ -313,4 +313,35 @@ Prior addenda used three different unique-outright-contract counts at different 
 | F7 | **Medium — NEW, for adjudication** | OPEN | PA and PL show a materially larger unexplained OI-gap residual (171 and 176 symbol-days respectively) than the other 16 symbols (1–4 days each), concentrated in their second-nearest ("next") contract not always receiving a published OI figure even on days it traded. Plausibly explained by PA/PL being the thinnest markets in the universe, but not independently confirmed as benign. | **Not resolved here, per Step 4's instruction.** Options for Aaron + advisor to adjudicate: (a) treat identically to F4 (engine's missing-data path, no special handling); (b) a PA/PL-specific fallback rule if the roll rule's OI-crossover comparison hits a missing value for these two symbols specifically; (c) something else. Full date lists in `_carry-research-workspace/oi_roll_rule_readiness_FINAL.csv`. |
 | F8 | **Low — NEW, informational** | Recorded, no action needed | A second `raw_symbol`-collision identity hazard (CME's single-digit-year shorthand is ambiguous across the 16-year sample) exists alongside F6's `instrument_id` reuse — see the consistency-sweep section above. | No code currently deduplicates by `raw_symbol` alone (the engine always carries `instrument_id` alongside it), so this has not caused any wrong number in this project. Recorded so any future code that's tempted to key on `raw_symbol` alone knows why not to. |
 | — | Blocked | **RESOLVED** | Settlement coverage, OI coverage, settlement spot-checks required `statistics`. | Complete — see §1, §2, §5 above. |
-| — | **Open, non-technical** | **OPEN** | Step 2 ledger reconciliation ($93.38 vs. $96.19, a $2.81 ambiguity) requires Aaron's current Databento portal balance, not supplied in this session's governing prompt (`POST_PULL_BALANCE` was left as the unfilled placeholder). | Awaiting Aaron's portal balance figure. Also awaiting Aaron's confirmation that the monthly spending limit has actually been restored to $20. |
+| — | **Open, non-technical** | **RESOLVED** | Step 2 ledger reconciliation ($93.38 vs. $96.19, a $2.81 ambiguity). | **Closed 2026-07-11 — see the addendum below.** |
+
+---
+
+## Addendum — 2026-07-11, Phase 1b Step 0 (adjudication record + reconciliation closure)
+
+### F7 roll-rule reading (not a deviation)
+
+**Ruling (dated 2026-07-11, authority: "Aaron + advisor, decided blind to results"):** `PREREGISTRATION.md` §3's roll rule as registered already defines behavior under missing OI — the front switches from `c1` to `c2` at the first `t` such that the crossover condition `OI_{t−1}(c2) > OI_{t−1}(c1)` is *observed true*. Missing `t−1` OI for either contract means that condition is unobservable that day, so it cannot be observed true, and the current front is held. **This is a reading of the registered rule, not a deviation from it** — no `DEVIATIONS.md` entry applies to this point. `src/roll.py::compute_front_contract_series()` was already written this way in Phase 1a (the crossover `if` only advances `current_idx` when both lagged OI values are non-null *and* the inequality holds; any other case — including either value being `NaN` — falls through to holding the current front), independently of this ruling; this addendum confirms that existing behavior is the intended one rather than an accidental match.
+
+Per-symbol rule forks (e.g. a volume-based OI fallback specifically for PA/PL) and universe amputation (dropping PA/PL from the study) were both considered in adjudicating F7 and rejected — see the `DEVIATIONS.md` entry dated 2026-07-11 for the rejected-alternatives record and the one diagnostic that was adopted in their place (item 11, ex-PA/PL primary-series recomputation, non-gating).
+
+### Reconciliation closure
+
+Aaron's Databento portal shows **$29.67 remaining credits**. Against the $125.00 pull-approval balance, **total corpus acquisition cost = $95.33**, inside the $100 `CUMULATIVE_CEILING`.
+
+This closes the $2.81 ambiguity left open in the prior addendum: $93.379095 (confirmed) + the two premature-termination chunks (2011–2012, 2014–2015 — the client-side "Response ended prematurely" errors, as distinct from the 2017–2018 chunk's deliberate kill) billed for delivered bytes only ≈ **$1.95**, not their full quoted amounts, giving $93.379095 + $1.95 ≈ **$95.329095**, matching the balance-delta figure to the cent. The 2017–2018 chunk (killed client-side mid-transfer, not a server/network interruption) was not billed at all. **Card charged: $0.00** — this was a pre-funded credit balance, not a card transaction. **Monthly spending limit confirmed restored to $20** by Aaron.
+
+Final, closed cost table for this project's Phase 1a corpus acquisition:
+
+| Component | Amount (USD) |
+|---|---|
+| Confirmed REAL SPEND (ledger rows, unambiguous) | 93.379095 |
+| 2011–2012 + 2014–2015 chunks, delivered-bytes-only billing | ≈1.95 |
+| 2017–2018 chunk (client-killed, not billed) | 0.00 |
+| **Total** | **95.33** (portal-confirmed) |
+| Ceiling | 100.00 |
+| Headroom (unused) | 4.67 |
+
+### Spot-check relabel
+
+The 2020-04-20 CLK0 = -$37.63 check (§5 of the prior addendum) is relabeled: it is the **field-identification anchor** for `stat_type=3`, not an independent spot-check — a value used to *identify* what a field means cannot also serve as independent confirmation *of* that identification; that would be circular. The independent corroboration for the settlement/OI extraction pipeline is: (a) `stat_type=6`'s pre-expiry OI-decay shape (a structural property unrelated to any single price value); (b) the SI, April 2011 approximate check; (c) the overall coverage-consistency results in §1/§2 (settlement and OI both present for >98% of outright trading bars, with the residual concentrated in explicable thin/holiday cases) — internal consistency across ~941,928 independent bars is itself meaningful corroboration, distinct from anchoring a single field's identity to a single famous value.

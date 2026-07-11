@@ -137,3 +137,13 @@ Running cumulative after this session's batch submissions (worst-case basis): $9
 The 4 legacy yearly `statistics` chunk files (rows 46/49/51/54 above) were moved to `DATA_DIR/_superseded/` this session -- retired, not deleted, still real billed provenance. See `data/MANIFEST.md`'s "Superseded" section for their checksums.
 
 **Step 2 reconciliation ($93.38 vs $96.19 ambiguity) remains OPEN** -- `POST_PULL_BALANCE` was not supplied this session (left as the governing prompt's unfilled placeholder). See `docs/DATA_QA_REPORT.md`'s addendum for the full account of what's needed to close it.
+
+### Phase 1b Step 0 -- reconciliation CLOSED, 2026-07-11
+
+Portal balance: **$29.67 remaining** of the $125.00 pull-approval balance. **Total corpus acquisition cost: $95.33** (portal-confirmed), inside the $100 `CUMULATIVE_CEILING`.
+
+Resolution of the $2.81 ambiguity: confirmed $93.379095 + the 2011-2012 and 2014-2015 chunks (the two client-side "Response ended prematurely" cases) billed for delivered bytes only, **~$1.95 combined** (not their full quoted amounts of $0.790831 + $0.758321 = $1.549152) = **$95.329095**, matching the balance-delta figure to the cent. The 2017-2018 chunk (deliberately killed client-side, not a network/server interruption) was **not billed** ($0.00).
+
+**Card charged: $0.00** (pre-funded credit balance). **Monthly spending limit confirmed restored to $20** by Aaron. This corpus acquisition's cost history is now fully closed -- no further entries expected in this ledger unless a future `DEVIATIONS.md`-logged re-pull occurs.
+
+**Final total: $95.33 / $100.00 ceiling ($4.67 unused headroom).**
