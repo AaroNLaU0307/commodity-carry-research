@@ -23,14 +23,52 @@ from . import config
 
 
 def load_dbn(schema: str, data_dir: Path = None) -> "databento.DBNStore":
-    """Loads one schema's DBN file from DATA_DIR. Local import of databento
-    keeps it optional for the synthetic-only test suite."""
+    """Loads one schema's single-file DBN delivery from DATA_DIR (currently
+    only `ohlcv-1d`, delivered as one file). Local import of databento keeps
+    it optional for the synthetic-only test suite."""
     import databento as db
     data_dir = config.DATA_DIR if data_dir is None else data_dir
     path = Path(data_dir) / f"{schema}.dbn.zst"
     if not path.exists():
         raise FileNotFoundError(f"Expected {schema} data at {path} -- has the Phase 1a corpus pull run?")
     return db.DBNStore.from_file(path)
+
+
+def load_dbn_partitioned(schema: str, data_dir: Path = None) -> pd.DataFrame:
+    """Loads a per-day-partitioned DBN delivery (`definition`, `statistics`
+    -- Databento batch jobs default to `split_duration="day"`) from
+    DATA_DIR/{schema}/*.dbn.zst, concatenated into one DataFrame with a
+    DatetimeIndex preserved from each file.
+
+    Looks ONLY inside DATA_DIR/{schema}/ -- never at loose
+    DATA_DIR/{schema}_*.dbn.zst files. This is a deliberate, load-bearing
+    restriction, not an incidental implementation detail: session 1 pulled
+    `statistics` as ad hoc yearly chunks (`statistics_2010-06-06_2011-01-01
+    .dbn.zst` etc.) before the batch-job API was adopted; those chunks are
+    billed provenance and are retained in DATA_DIR/_superseded/ (never
+    DATA_DIR/{schema}/) precisely so this function cannot resolve them even
+    by accident -- see docs/DATA_QA_REPORT.md's addenda for the full
+    single-provenance rationale. Mixing chunk-era and batch-era files into
+    one carry/roll computation would silently blend two different pull
+    mechanisms' worth of data into what must be one clean, auditable
+    dataset.
+
+    Raises FileNotFoundError if DATA_DIR/{schema}/ doesn't exist or is
+    empty, rather than silently returning an empty/partial result.
+    """
+    import databento as db
+    data_dir = config.DATA_DIR if data_dir is None else data_dir
+    schema_dir = Path(data_dir) / schema
+    if not schema_dir.is_dir():
+        raise FileNotFoundError(
+            f"Expected a per-day-partitioned {schema} delivery at {schema_dir} "
+            f"(a directory) -- has the Phase 1a batch-job pull completed?"
+        )
+    files = sorted(schema_dir.glob("*.dbn.zst"))
+    if not files:
+        raise FileNotFoundError(f"{schema_dir} exists but contains no .dbn.zst files.")
+    frames = [db.DBNStore.from_file(f).to_df() for f in files]
+    return pd.concat(frames)
 
 
 def build_month_end_calendar(daily_index: pd.DatetimeIndex) -> pd.DatetimeIndex:
