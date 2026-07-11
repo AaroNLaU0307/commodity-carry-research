@@ -129,3 +129,11 @@ These are recorded for the record only (in case the ambiguous-billing question e
 | definition | 25.256725 | `GLBX-20260710-BN6B8WQRWH` | yes -- billed on submission per SDK docstring, logged as REAL SPEND now |
 
 Running cumulative after this session's batch submissions (worst-case basis): $96.189823
+
+### Phase 1a Completion session -- statistics landing, 2026-07-11
+
+`definition` (`GLBX-20260710-BN6B8WQRWH`) downloaded successfully in the prior session (5,031 files, zero failures). `statistics` (`GLBX-20260710-E8YMQQJMA7`) reached `state="done"` and was downloaded this session: 5,026 data files via the per-file retry/resume mechanism, zero failures. No new charge either time -- download is free, cost was already incurred and logged at `submit_job()` time above. Cumulative remains unchanged by this entry: confirmed **$93.379095**, worst-case **$96.189823**, both under the $100 ceiling.
+
+The 4 legacy yearly `statistics` chunk files (rows 46/49/51/54 above) were moved to `DATA_DIR/_superseded/` this session -- retired, not deleted, still real billed provenance. See `data/MANIFEST.md`'s "Superseded" section for their checksums.
+
+**Step 2 reconciliation ($93.38 vs $96.19 ambiguity) remains OPEN** -- `POST_PULL_BALANCE` was not supplied this session (left as the governing prompt's unfilled placeholder). See `docs/DATA_QA_REPORT.md`'s addendum for the full account of what's needed to close it.

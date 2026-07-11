@@ -29,13 +29,20 @@ DATA_DIR = Path(r"C:\Users\Aaron\quant-data\commodity-carry")
 MANIFEST_PATH = REPO / "data" / "MANIFEST.md"
 
 # Schemas confirmed fully delivered as of this manifest generation -- see
-# docs/DATA_QA_REPORT.md Sec 0 / addendum for what's actually complete.
-# "statistics" is deliberately absent: still processing server-side
-# (Databento batch job GLBX-20260710-E8YMQQJMA7) as of this snapshot.
+# docs/DATA_QA_REPORT.md Sec 0 / addenda for what's actually complete.
 CONFIRMED_COMPLETE_SCHEMAS = {
     "ohlcv-1d": "single_file",
     "definition": "per_day_dir",
+    "statistics": "per_day_dir",
 }
+
+# Retired, billed-but-superseded files -- see the single-provenance rationale
+# in src/data_loader.py::load_dbn_partitioned()'s docstring. Written by the
+# retirement step (checksummed before the move); read back here purely to
+# report their presence, not re-checksummed (they are DATA_DIR/_superseded/
+# only, never DATA_DIR/{schema}/, so load_dbn_partitioned() cannot resolve
+# them regardless of what this manifest says).
+SUPERSEDED_RECORD_PATH = WORKSPACE / "superseded_statistics_chunks.json"
 
 
 def sha256_of(path: Path) -> str:
@@ -150,19 +157,33 @@ def main():
     lines += [
         f"Total confirmed-complete: {len(results)} schema(s), {total_files:,} file(s), {total_bytes:,} bytes.",
         "",
-        "## Not yet manifested",
-        "",
-        "- `statistics` -- submitted as a Databento batch job (`GLBX-20260710-E8YMQQJMA7`), "
-        "billed at submission, still processing server-side as of this manifest generation. "
-        "See `docs/DATA_QA_REPORT.md`'s addendum Sec 0 for the current progress reading and "
-        "honest ETA assessment.",
-        "- 4 pre-batch `statistics` yearly-chunk files remain in `DATA_DIR` "
-        "(`statistics_2010-06-06_2011-01-01.dbn.zst` and 3 others) -- confirmed billed "
-        "(`docs/samples/COST_LEDGER.md` rows 46/49/51/54) but superseded by the pending "
-        "full-range batch job per the Step 1 reconciliation plan; kept until that job "
-        "completes and is verified, then removed as redundant. Not manifested here since "
-        "they cover only partial date ranges, not the full locked window.",
-        "",
+    ]
+
+    if SUPERSEDED_RECORD_PATH.exists():
+        superseded = json.loads(SUPERSEDED_RECORD_PATH.read_text(encoding="utf-8"))
+        lines += [
+            "## Superseded (billed provenance, retired, not part of the working dataset)",
+            "",
+            "Session 1 pulled `statistics` as ad hoc yearly chunks via synchronous streaming "
+            "before the batch-job API was adopted (see `docs/DATA_QA_REPORT.md`'s addenda). "
+            "The 4 confirmed-billed, complete chunks below are **retired** to "
+            "`DATA_DIR/_superseded/` now that the full-range batch delivery "
+            "(`GLBX-20260710-E8YMQQJMA7`) has landed and is verified complete -- moved, not "
+            "deleted, since they remain real billed provenance "
+            "(`docs/samples/COST_LEDGER.md` rows 46/49/51/54). "
+            "`src/data_loader.py::load_dbn_partitioned()` only ever resolves "
+            "`DATA_DIR/{schema}/*.dbn.zst`, never `DATA_DIR/_superseded/`, so these files "
+            "cannot be silently mixed into a Phase 1b/1c computation -- single-provenance "
+            "by construction, not just by convention.",
+            "",
+            "| File | Size (bytes) | SHA-256 |",
+            "|---|---|---|",
+        ]
+        for e in superseded:
+            lines.append(f"| `{e['name']}` | {e['size']:,} | `{e['sha256']}` |")
+        lines.append("")
+
+    lines += [
         "## Notes",
         "",
         "- Raw data integrity findings (settlement/OI coverage, gaps, expiry "
