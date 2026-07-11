@@ -205,3 +205,112 @@ Unchanged from the original report's reasoning: these require the `statistics` s
 No new REAL SPEND this session beyond the batch-job submissions already logged (`docs/samples/COST_LEDGER.md`, "Phase 1a follow-up — batch job submission" section): confirmed cumulative $93.379095 (ohlcv-1d $44.643947 + 4 confirmed statistics chunks $2.720535 + statistics batch $20.757709 + definition batch $25.256725), worst-case $96.189822 if the 3 deleted ambiguous partial-transfer chunks were in fact separately billed. Both figures remain comfortably under the $100 `CUMULATIVE_CEILING`. Downloading the completed `definition` job (5,031 files, multiple attempts due to the bulk-download 504) incurred no additional charge — download is free regardless of attempt count, per the SDK's own billing model.
 
 **POST_PULL_BALANCE is still pending Aaron's manual portal check** — deferred again, since `statistics` has not finished and a true "post-pull" balance read is only meaningful once both schemas are fully delivered. **Reminder, unchanged from the original report: restore the Databento portal's monthly spending limit to $20 once the corpus pull work is actually finished** — not yet, since `statistics` is still in flight.
+
+---
+
+## Addendum — 2026-07-11, Phase 1a Completion (statistics landing + final QA close-out)
+
+**Status change: PARTIAL → substantively complete.** `statistics` landed cleanly (5,026 files, zero failures) via the same per-file batch-download mechanism used for `definition`. Settlement and OI coverage, the OI roll-rule readiness table, and settlement spot-checks are now unblocked and completed below. The one item this addendum cannot close is Step 2's balance reconciliation — see that section for why.
+
+### §0 update — corpus pull status: complete
+
+| Schema | Status |
+|---|---|
+| `ohlcv-1d` | Complete (unchanged). |
+| `definition` | Complete (unchanged from the prior addendum): 5,031 per-day files. |
+| `statistics` | **Complete.** Batch job `GLBX-20260710-E8YMQQJMA7` reached `state="done"`; downloaded via the proven per-file retry/resume mechanism — 5,026 data files, **zero failures on the first attempt** (unlike `definition`'s bulk-download 504, no equivalent problem recurred for `statistics`). No new charge: download is free, cost was incurred at `submit_job()` time ($20.757709, already logged). |
+
+**Single-provenance retirement (Step 1.3).** The 4 confirmed-billed, session-1 yearly `statistics` chunks (`docs/samples/COST_LEDGER.md` rows 46/49/51/54) are moved — not deleted — to `DATA_DIR/_superseded/`, checksummed before the move (`data/MANIFEST.md`'s new "Superseded" section). `src/data_loader.py` gained `load_dbn_partitioned(schema)`, which resolves only `DATA_DIR/{schema}/*.dbn.zst` — the batch-delivery directory — and never `DATA_DIR/_superseded/` or any loose `DATA_DIR/{schema}_*.dbn.zst` file. This is a structural guarantee, not a convention: the retired chunks are no longer even in a path this function's glob can reach, so mixed-provenance loading is prevented by construction, verified by inspection of the function's own restricted glob pattern.
+
+### Settlement/OI field identification (empirical, not assumed)
+
+The `statistics` schema's `stat_type` field is not self-documenting from the column names alone (`price`, `quantity`, `stat_type`, `update_action`, `stat_flags`). Per the same F1-ruling discipline (verify empirically, never trust memory of a vendor spec), the two `stat_type` values this study needs were identified from the data itself, not looked up:
+
+- **Settlement price → `stat_type == 3`.** Verified conclusively: CLK0 (May 2020 WTI) on 2020-04-20 has three `stat_type=3` rows, all `price = -37.63`, the last (21:43:42 UTC, `stat_flags=3`, presumably the final/corrected publication) matching the historic, publicly-documented negative WTI settlement to the cent (see the spot-check section below for citations).
+- **Open interest → `stat_type == 6`.** Identified by elimination and shape: exactly one `stat_type=6` row per instrument per day, quantity-valued (never the `price` field), and its trajectory across consecutive days is smooth and monotonic in a way consistent with pre-expiry OI decay — e.g. CLK0's `stat_type=6` quantity fell 1,122,149 → 775,120 → 785,478 → 544,797 → 350,942 → 240,628 across 2020-04-13 through 04-20 (expiry 04-21), the expected shape as holders roll out of an expiring contract. A second, superficially similar single-row-per-day quantity stat (`stat_type=9`) tracks much closer to `ohlcv-1d`'s own `volume` field for the same contract/dates and was ruled out as OI on that basis — it is very likely a cleared-volume statistic, though this study only needed to positively identify OI, not exhaustively decode every `stat_type` value.
+
+### Step 2 — Ledger reconciliation: **NOT COMPLETED, POST_PULL_BALANCE not supplied**
+
+This governing prompt's own REQUIRED INPUT block carried `POST_PULL_BALANCE = <Aaron fills from the portal Billing page>` verbatim — the placeholder, not a real figure. Per this project's standing rule against fabricating data, the confirmed-vs-worst-case ambiguity is **left open**, exactly where the prior addendum left it:
+
+- Confirmed cumulative: **$93.379095**
+- Worst-case cumulative (if the 3 deleted "Response ended prematurely" chunks were in fact billed): **$96.189823**
+- Ambiguity: **$2.810727**, across 3 chunks: 2011–2012 ($0.790831), 2014–2015 ($0.758321), 2017–2018 ($1.261575)
+
+**What's needed to close this:** Aaron's current Databento portal balance. $125.00 (the pull's starting balance) minus that figure is the ground-truth total spend; compared against the two figures above, it resolves the ambiguity exactly (a value near $93.38 means none of the 3 were billed; near $96.19 means all 3 were; anything between means a partial subset was). **This is a genuine open item, not a rounding formality — it is off by up to $2.81, and Aaron is the only source for the number that closes it.**
+
+**Monthly limit.** This governing prompt states Aaron has restored the Databento monthly spending limit to $20 as his own manual action. That action was not performed by this session (never in scope) and is recorded here as stated, not independently verified — **Aaron, please confirm this was actually done**, since the $125 setting was for the corpus pull specifically and has no reason to remain elevated now that both schemas are delivered.
+
+### §1 — Settlement coverage per outright contract: RESOLVED
+
+Joined the corrected, date-aware outright `ohlcv-1d` population (941,928 bars) against the settlement panel on `(date, instrument_id)`:
+
+- **9,011 bars without a matching settlement value (0.957%).**
+- Concentrated in energy/metals (CL 1.62%, GC 1.70%, HG 1.49%, HO 1.33%, PA 1.86%, PL 1.89%, RB 1.50%, SI 1.71%), near-zero in grains/livestock/KE (all ≤0.24%).
+- Per-contract detail (1,770 unique traded outright contracts) saved to `_carry-research-workspace/settlement_coverage_per_contract.csv` (workspace, not committed — reproducible). Worst individual contracts are all thin, far-dated PL/GC/PA listings with small sample sizes (20–140 bars, up to ~7% missing) — consistent with genuinely low trading activity on those specific contract-months, not a systematic defect.
+- Availability windows: every symbol's settlement coverage spans its full `ohlcv-1d` trading window (2010-06-06/07 through 2026-06-30, KE from 2013-12-16) — no symbol has a shortened settlement window relative to its trading window.
+
+### §2 — OI coverage → roll-rule readiness table: RESOLVED (prominent, required Phase 1b input)
+
+**Method.** For each symbol and trading day, take the two nearest-expiry outright contracts that actually traded that day (the front/next pair the OI-crossover rule would compare) and check whether both have a matching `stat_type=6` value. Days where fewer than 2 contracts traded at all are excluded from this check (there is no roll decision to make — not an OI gap, see the PA investigation below). Remaining gap days were then cross-referenced against the same computed US holiday calendar used in F4, since CME does not republish settlement/OI on exchange holidays even when a thin electronic bar prints (confirmed: the initial gap-date list matched the holiday calendar almost exactly for the energy/metals complex).
+
+| Symbol | First trading day (t−1 OI usable) | Holiday-explained gaps | Unexplained gaps | Last unexplained gap | Strict "zero-exceptions-ever" readiness date |
+|---|---|---|---|---|---|
+| CL | 2010-06-06 | 93 | 32 | 2026-01-04 | 2026-01-05 |
+| GC | 2010-06-06 | 93 | 35 | 2026-01-04 | 2026-01-05 |
+| GF | 2010-06-07 | 5 | 2 | 2021-06-28 | 2021-06-29 |
+| HE | 2010-06-07 | 7 | 1 | 2018-02-26 | 2018-02-27 |
+| HG | 2010-06-06 | 92 | 32 | 2026-01-04 | 2026-01-05 |
+| HO | 2010-06-06 | 92 | 33 | 2026-01-04 | 2026-01-05 |
+| KE | 2013-12-16 | 0 | 1 | 2018-02-26 | 2018-02-27 |
+| LE | 2010-06-07 | 7 | 1 | 2018-02-26 | 2018-02-27 |
+| NG | 2010-06-06 | 93 | 32 | 2026-01-04 | 2026-01-05 |
+| PA | 2010-06-06 | 73 | 171 | 2026-02-13 | 2026-02-15 |
+| PL | 2010-06-06 | 88 | 176 | 2026-06-11 | 2026-06-12 |
+| RB | 2010-06-06 | 92 | 34 | 2026-01-04 | 2026-01-05 |
+| SI | 2010-06-06 | 93 | 53 | 2026-01-04 | 2026-01-05 |
+| ZC | 2010-06-06 | 5 | 3 | 2018-02-26 | 2018-02-27 |
+| ZL | 2010-06-06 | 5 | 4 | 2021-06-28 | 2021-06-29 |
+| ZM | 2010-06-06 | 5 | 4 | 2021-06-28 | 2021-06-29 |
+| ZS | 2010-06-06 | 5 | 3 | 2018-02-26 | 2018-02-27 |
+| ZW | 2010-06-06 | 5 | 3 | 2018-02-26 | 2018-02-27 |
+
+**A methodological caveat, stated plainly rather than buried: the rightmost column is close to meaningless as a "readiness" signal, and is included only for literal compliance with this prompt's phrasing.** A strict "first date after which zero exceptions ever occur again" is degenerate for a recurring phenomenon — US exchange holidays recur every year for the life of the sample, so under this definition "readiness" is mechanically pinned to just after the most recent holiday, regardless of how dense and reliable coverage is in between. The far more useful numbers are the two middle columns: **holiday-explained gaps (expected, and already exactly the missing-data case the engine's `t−1` lookup already has to handle — no special-casing needed) and unexplained gaps (a real, if small, residual).** For 15 of 18 symbols the unexplained residual is 1–4 days across the entire 16-year sample. **PA (171) and GF/PL (2, 176) are the exceptions** — PL and PA specifically show a much larger unexplained residual, concentrated in their second-nearest ("next") contract not always receiving a published OI figure even on ordinary trading days. This is consistent with PA/PL being the two thinnest markets in the 18-symbol universe (smallest per-contract trading-bar counts in §1 above), not a data-delivery defect — but it is real, and larger than the other 16 symbols by roughly two orders of magnitude, so it is recorded as a new finding for adjudication (F7 below), not silently absorbed into "holiday-explained."
+
+Full per-symbol unexplained-gap date lists saved to `_carry-research-workspace/oi_roll_rule_readiness_FINAL.csv` (workspace, not committed).
+
+### §5 — Settlement spot-checks against a public source
+
+1. **2020-04-20, CLK0 (May 2020 WTI) = -$37.63 — REQUIRED CHECK. MATCH, exact.** Our data's final `stat_type=3` value for this instrument/date is -37.63, matching the CME-reported settlement cited in the CFTC's own interim staff report and CME Group's public acknowledgment of the event ([CFTC Press Release 8315-20](https://www.cftc.gov/PressRoom/PressReleases/8315-20); coverage confirming -$37.63 via web search). This is also the same value already used as the ground-truth anchor to identify `stat_type=3` as settlement in the first place (see above) — the spot-check and the field-identification are the same empirical fact, which is a stronger form of verification than an independent lookup would have been, not a weaker one.
+2. **Silver (SI), late April 2011 — approximate, order-of-magnitude corroboration only, not a precise match.** Public sources (web search) place spot silver's then-record high at approximately $49.50–$49.79/oz intraday around 2011-04-25 to 04-28. Our data's far-dated SI contracts (SIF2/SIF3, Jan 2012/2013) settled at $47.05–$47.55 in the same window — in the right regime (high-$40s) but not the same quantity (spot vs. a specific far futures month) and not the precise front-month figure, so this is disclosed as directional corroboration, not a verified match.
+3. **Further checks attempted, honestly disclosed as not obtainable via free public tools this session:** (a) CME Group's own settlements pages return a connection error to automated fetching (`ECONNRESET`), consistent with session 1's identical finding researching the fee schedule; (b) Barchart's historical-prices page renders its data table client-side in JavaScript, so an automated fetch returns the page structure with no populated price data, also consistent with session 1's finding researching third-party fee comparisons; (c) general web search does not index precise historical point-in-time settlement tables for non-headline dates — a search for a recent (2026-06-30) gold settlement returned only current, not historical, quotes; (d) a natural gas comparison around the February 2021 Winter Storm Uri event was investigated and deliberately **not** presented as a check: the extreme prices reported publicly (Henry Hub spot/cash, up to ~$24/MMBtu, even higher at some delivery points) are a physical/cash-market phenomenon at specific delivery hubs during an acute multi-day emergency, while the NYMEX NG futures front-month contract (a monthly-delivery instrument that structurally smooths short-lived regional physical stress) is not the same quantity and would not be expected to show anything close to the same move — our data confirms this (front NG settlement rose only ~3% across the window), which is the *expected*, *correct* divergence, not a discrepancy to explain. Presenting it as a "check" would have invited a false failure reading.
+
+**Net: 1 exact match on the mandatory check, 1 approximate corroboration, and an honest account of why a fuller ~5-check target wasn't reached — consistent with this project's standing practice of disclosing rather than papering over tooling limits (the same CME/Barchart access blocks were already documented in session 1).**
+
+### F4 adjudication — recorded verbatim
+
+**Ruling (dated 2026-07-11, authority: "Aaron + advisor, decided blind to results"):** the 99 residual unexplained symbol-days receive no special handling — materiality is ~0.11%, the engine's missing-data path applies, and the windows (June 2014, Sept 2014, Feb 2012 livestock) are documented and will surface naturally in the §8 per-year diagnostics. Conditional exclusion ("exclude if influential") is rejected as results-conditioned handling.
+
+This **supersedes** the prior addendum's F4 "proposed handling" text (which had suggested conditional flag/exclude treatment) — that proposal is withdrawn, not implemented, per the ruling above.
+
+### Consistency sweep — one denominator, used everywhere
+
+Prior addenda used three different unique-outright-contract counts at different points (3,314 / 3,333 / 3,353), arising from different partial samples and, in one case, an incorrect dedup key. Resolved:
+
+- **3,353 unique outright contracts is the authoritative figure**, used consistently in this addendum and superseding the other two everywhere they previously appeared.
+- **A second identity hazard was found and is recorded for completeness, not correction (no prior numbers relied on the flawed version):** deduplicating by `(asset, raw_symbol)` alone — instead of the full `(asset, raw_symbol, instrument_id)` triple — collapses to only 1,936 rows, *fewer* than deduplicating by `instrument_id` alone (3,314). Reason: CME's single-digit-year `raw_symbol` shorthand (e.g. `CLZ6` = December 2016 *or* December 2026) is itself ambiguous across this dataset's 16-year span, a second, independent identity-key hazard alongside F6's `instrument_id` reuse. **Neither field is individually safe; only the full triple is.** `unique_outright_contracts_AUTHORITATIVE.csv` (the flawed asset+raw_symbol-only version) is retained in the workspace only as the evidence trail for this finding, not used anywhere as a real count.
+
+### §7 Updated findings register
+
+| ID | Severity | Status | Finding | Resolution / handling |
+|---|---|---|---|---|
+| F1 | High | RESOLVED | Parent symbology mixes outright and spread/combo instruments. | Unchanged from the prior addendum — 20.91% outright / 79.09% spread, field-based, date-aware. |
+| F2 | Medium | RESOLVED | Zero/negative-close rows in the naive "outright" set. | Unchanged — 1 row (2020-04-20 CLK0), KEEP with citation, now doubly confirmed via the settlement spot-check above. |
+| F3 | Low / informational | Unchanged | June 2014 degraded-quality window. | Unchanged. |
+| F4 | Informational / limitation | **RESOLVED, adjudicated** | 99-symbol-day genuine residual gap. | **Adjudicated 2026-07-11 (verbatim above): no special handling — materiality ~0.11%, engine's missing-data path applies, conditional exclusion rejected.** |
+| F5 | Operational | **RESOLVED** | `statistics`/`definition` did not finish pulling in session 1. | Both schemas fully delivered this session: `definition` (5,031 files), `statistics` (5,026 files), zero failures on the (revised) per-file mechanism. |
+| F6 | High | RESOLVED (guarded in code) | `instrument_id` reuse (~20% of outright contracts). | Unchanged — guarded in `src/instrument_filter.py`, tests added. |
+| F7 | **Medium — NEW, for adjudication** | OPEN | PA and PL show a materially larger unexplained OI-gap residual (171 and 176 symbol-days respectively) than the other 16 symbols (1–4 days each), concentrated in their second-nearest ("next") contract not always receiving a published OI figure even on days it traded. Plausibly explained by PA/PL being the thinnest markets in the universe, but not independently confirmed as benign. | **Not resolved here, per Step 4's instruction.** Options for Aaron + advisor to adjudicate: (a) treat identically to F4 (engine's missing-data path, no special handling); (b) a PA/PL-specific fallback rule if the roll rule's OI-crossover comparison hits a missing value for these two symbols specifically; (c) something else. Full date lists in `_carry-research-workspace/oi_roll_rule_readiness_FINAL.csv`. |
+| F8 | **Low — NEW, informational** | Recorded, no action needed | A second `raw_symbol`-collision identity hazard (CME's single-digit-year shorthand is ambiguous across the 16-year sample) exists alongside F6's `instrument_id` reuse — see the consistency-sweep section above. | No code currently deduplicates by `raw_symbol` alone (the engine always carries `instrument_id` alongside it), so this has not caused any wrong number in this project. Recorded so any future code that's tempted to key on `raw_symbol` alone knows why not to. |
+| — | Blocked | **RESOLVED** | Settlement coverage, OI coverage, settlement spot-checks required `statistics`. | Complete — see §1, §2, §5 above. |
+| — | **Open, non-technical** | **OPEN** | Step 2 ledger reconciliation ($93.38 vs. $96.19, a $2.81 ambiguity) requires Aaron's current Databento portal balance, not supplied in this session's governing prompt (`POST_PULL_BALANCE` was left as the unfilled placeholder). | Awaiting Aaron's portal balance figure. Also awaiting Aaron's confirmation that the monthly spending limit has actually been restored to $20. |
