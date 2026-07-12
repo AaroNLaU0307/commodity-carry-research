@@ -345,3 +345,138 @@ Final, closed cost table for this project's Phase 1a corpus acquisition:
 ### Spot-check relabel
 
 The 2020-04-20 CLK0 = -$37.63 check (§5 of the prior addendum) is relabeled: it is the **field-identification anchor** for `stat_type=3`, not an independent spot-check — a value used to *identify* what a field means cannot also serve as independent confirmation *of* that identification; that would be circular. The independent corroboration for the settlement/OI extraction pipeline is: (a) `stat_type=6`'s pre-expiry OI-decay shape (a structural property unrelated to any single price value); (b) the SI, April 2011 approximate check; (c) the overall coverage-consistency results in §1/§2 (settlement and OI both present for >98% of outright trading bars, with the residual concentrated in explicable thin/holiday cases) — internal consistency across ~941,928 independent bars is itself meaningful corroboration, distinct from anchoring a single field's identity to a single famous value.
+
+---
+
+## Addendum — 2026-07-12, Phase 1b Step 0 continued (F9/F10 resolved; F11 opened for adjudication)
+
+**Scope of this addendum.** Two contract-identity bugs (F9, F10) found while building the Phase 1b pipeline are recorded here as RESOLVED, code-correctness fixes — per the governing Phase 1b Riders, these are not `DEVIATIONS.md` entries (no design choice was made; the fix restores the frozen pre-registration's intended behavior on previously-corrupted input; the earlier next-settle ≤ 0 → NaN ruling remains ratified and unchanged). A third, structural finding (F11) is opened for adjudication: fixing F9/F10 did not resolve most of the roll rule's stuck-front problem, and the residual is a genuine design limitation, not a further bug. **No `roll.py` change is made in this addendum, and no premise-test run happens here** — this is characterization only.
+
+### F9 — RESOLVED: raw_symbol format instability within a single contract's life
+
+A single real contract's `raw_symbol` representation can itself change partway through its own listed life — not a collision between two different contracts (that is F8), but the *same* `instrument_id` reporting a different symbol string over time. Confirmed example: `instrument_id 551735` (a CL contract expiring 2019-05-21) is recorded as `raw_symbol "CLM19"` on its first 2 listed days (2010-11-04/05) and `"CLM9"` for the remaining ~9 years through expiry. Caught via an implausible ~49% held-front missing-settlement rate concentrated from 2019 onward — `raw_symbol + instrument_id` as originally keyed silently split this one real contract's settlement/OI history across two spurious `_contract_key` columns.
+
+**Fix.** `raw_symbol` dropped from `_contract_key` entirely — the key is now `instrument_id + "__" + expiration.date()` (see F10 for why the date, not the full timestamp). `src/pipeline.py::build_outright_panel()`.
+
+**Tests.** `test_F9_build_outright_panel_unifies_a_contract_whose_raw_symbol_format_changes` (synthetic fixture, `tests/test_pipeline.py`), asserting the unified key yields one continuous OI history across the format change.
+
+### F10 — RESOLVED: expiration time-of-day correction fractures contract identity
+
+A single real contract's `expiration` field can be corrected mid-life at the **time-of-day** level while the calendar date stays fixed. Confirmed example: `instrument_id 827180` (a KE contract) is recorded with `expiration "2014-09-12 18:15:00"` for its first 186 listed days (2013-12-15 to 2014-07-18) and `"2014-09-12 17:01:00"` for its remaining 48 days (2014-07-20 to 2014-09-12) — same calendar date throughout, a mid-life metadata correction to the exact time only.
+
+Keying on the full timestamp (as the pipeline did immediately after the F9 fix, before this one) split this one contract's OI history into two fragments. The fragmentation happened to land exactly where an adjacent contract's roll should have occurred, so `roll.py`'s crossover condition — correctly implementing the F7 hold-on-missing ruling — could never observe both sides of the crossover simultaneously again: front froze permanently on the now-expired prior contract for the rest of the sample. **This is corrupted input, not a flaw in `roll.py` or the F7 ruling** — F7's hold-on-missing behavior is confirmed to have behaved exactly as specified once given a correctly-unified contract identity; it required no change.
+
+**Confirmed via direct empirical verification before any fix was proposed:** unifying instrument_id 827180's two fragments restores 173 real, overlapping OI dates against the contract it should have rolled into.
+
+**Fix.** `expiration` truncated to its calendar date (`.dt.date`) in `_contract_key`, dropping the time-of-day component. Verified this does not reintroduce F6 (genuine `instrument_id` reuse across different real contracts): every confirmed F6/F10 case differs in expiration by months to years, never by a same-day time-correction, so a date-level match remains a safe disambiguator.
+
+**Tests.** `test_F10_build_outright_panel_unifies_a_contract_whose_expiration_time_of_day_is_corrected` (synthetic fixture proving the unified key yields one continuous OI history) and `test_genuine_F6_reuse_with_different_expiration_dates_does_not_unify` (the required negative-case fixture, proving a same-`instrument_id`-different-date pair stays separate) — `tests/test_pipeline.py`.
+
+### Contract-key unification audit (required by the Phase 1b Riders)
+
+`src/pipeline.py::audit_contract_key_unification()` groups every outright `(instrument_id, asset)` pair with more than one distinct expiration timestamp, and classifies it "unify" (all timestamps share one calendar date — F9/F10-style drift) or "keep_separate" (timestamps span different calendar dates — genuine F6 reuse). Grouped by `(instrument_id, asset)`, not `instrument_id` alone: real data surfaced `instrument_id 60` reused across two *different assets* entirely (SI and GF) — an even more extreme case of F6 than same-asset reuse, reported separately as `cross_asset` rather than forced into either bucket.
+
+| Category | Count |
+|---|---|
+| `unify` (F9/F10-style same-contract drift, merged) | 25 |
+| `keep_separate` (genuine F6 reuse, same asset, different dates) | 7 |
+| `cross_asset` (instrument_id spans >1 asset entirely) | 27 |
+
+Every fragment pair in `unify` was asserted to share the same `asset` (sanity check: unification never merges data across different commodities). Illustrative `unify` example beyond F9/F10 above: `instrument_id 66` (PL) shows `expiration "2021-11-26 17:05:00"` for 6 rows (2021-11-21 to 11-26) and `"2021-11-26 18:05:00"` for 84 rows (2021-08-15 to 11-19) — the same time-of-day-correction pattern as F10, recurring at the same November 2021 expiry across multiple symbols (also seen at instrument_ids 1079/PA, 1612/GC, 2303/HG, 33349/SI), consistent with a single exchange-side metadata correction batch rather than independent incidents. Illustrative `keep_separate` example: `instrument_id 335` (PA) shows two genuinely different contracts, expiring `2020-05-27` and `2023-07-27` — three years apart, correctly kept separate.
+
+**Reproduction of the informal pre-fix estimate.** An earlier, non-audit exploratory check (grouped by `instrument_id` alone, not asset-aware) had estimated "~25 unify / ~33 keep separate." The proper audit reproduces `n_unify = 25` exactly. The non-unify side is `7 + 27 = 34` against the informal `33` — a 1-count difference, attributable to the informal check's grouping: not being asset-aware, it could not distinguish `cross_asset` reuse (27 cases, e.g. instrument_id 60 spanning SI and GF) from same-asset-different-date reuse (7 cases) — both present identically as "an instrument_id with multiple expirations" under an `instrument_id`-only grouping. Per the governing riders ("the measured 25-unify/33-keep-separate split must be reproduced by the audit or the discrepancy explained"): `n_unify` reproduces exactly, and the 1-count gap on the other side is structurally attributable to the informal check's non-asset-awareness, not a new, unexplained inconsistency.
+
+### F11 — OPEN, for adjudication: §3's next-listed crossover deadlocks on listed-but-illiquid serials
+
+**Summary.** Fixing F9/F10 did not resolve most of the roll rule's stuck-front problem. Of 18 symbols, 13 show at least one episode where the permanent tripwire (`assert_front_not_past_expiry`) fires; 11 of those are **permanent** (the front never moves again for the rest of the 16-year sample). This is a structural limitation of §3's roll rule as registered, not a data-corruption bug: **F7's hold-on-missing ruling is confirmed to behave correctly on this cleaned-up data and is not implicated.** The root cause is that the rule's state machine only ever compares the current front to the single immediately-next contract in `listed_sequence` — it has no mechanism to look past that contract if its own crossover never fires, even when a later contract's OI is perfectly healthy and observable throughout.
+
+#### Dead-serial map
+
+CME lists many more contract-months per symbol than actually carry material open interest. Peak OI by listed month, aggregated across the full 16-year sample (`_carry-research-workspace/dead_serial_map.csv`):
+
+- **CL, HO, RB, NG** (energy): materially liquid in **all 12** listed months (peak OI in the hundreds of thousands to millions every month). No dead serials.
+- **GC, SI, HG** (COMEX metals): a sharp bimonthly pattern — even months (Feb/Apr/Jun/Aug/Oct/Dec) carry hundreds of thousands of peak OI; odd months carry only thousands or less. Matches the well-known COMEX principal-vs-serial-month convention for these products.
+- **PL**: only 4 genuinely liquid months (Jan/Apr/Jul/Oct, tens of thousands peak OI); the other 8 are near-zero (hundreds or less).
+- **PA**: only 4 liquid months (Mar/Jun/Sep/Dec, tens of thousands); the other 8 are near-zero (~100–500).
+- **Grains** (ZC/ZS/ZW/ZM/ZL/KE): only 5–8 specific months are listed **at all** — no other months appear in the registry, not even as thin serials.
+- **Livestock** (LE/HE/GF): 6–8 listed months with a liquidity gradient rather than a sharp liquid/dead split; no month is literally zero.
+
+This directly explains most of the stuck-front episodes below: the roll rule's single candidate is, for several symbols, structurally very likely to be a month the real market never trades.
+
+#### Episode classification
+
+Every stuck-past-expiry episode across all 18 symbols (16 total), classified per the requested taxonomy (`_carry-research-workspace/stuck_episodes_classified.csv`):
+
+| Pattern | Definition | Count | Symbols |
+|---|---|---|---|
+| (a) dead-serial deadlock | next-listed contract never gains material OI | 10 | GF, HO, PA, PL, RB, ZC, ZL, ZM, ZS, ZW (1 each) |
+| (b) overlap-never-crosses | both front and next observable, but next's OI never exceeds front's before next's own window ends | 1 | HE |
+| (c) narrow/absent OI window | next has no overlapping OI-observation window with front at all | 0 | — |
+
+All 11 of these episodes are **permanent** — held from first stuck date through sample end (2026-06-30), 2,706 to 5,785 days. 8 of the 10 pattern-(a) cases have the next candidate's peak OI at **exactly 0.0** ever recorded (HO, RB, ZC, ZS, ZW, ZM, ZL, GF); the remaining 2 are de minimis but not literally zero (PL: 27; PA: 2). This is a natural, not threshold-chosen, split: the single pattern-(b) case (HE) has a next-candidate peak OI of 2,314 — two orders of magnitude above the pattern-(a) cluster — so the (a)/(b) boundary falls out of the data rather than an arbitrary cutoff.
+
+**HE detail (pattern b, "where did the market's OI go").** HE's front got stuck on the contract expiring 2011-04-14; the immediately-next candidate (expiring 2011-05-13) reached a peak OI of 2,314 but never exceeded the stuck front's own OI during their overlap window. Scanning forward through `listed_sequence`, the first later contract whose peak OI clearly exceeds the stuck front's is the one expiring **2011-12-14** — about 8 months later. HE's dead-serial map shows May is its thinnest listed month (peak OI as low as ~2,700 in some years) but not literally dead like PL/PA's off-quarter months — consistent with a genuine, if severe, liquidity trough rather than an entirely unlisted-in-practice month.
+
+**A fourth, minor pattern found and characterized (outside the requested a/b/c taxonomy): transient single-day expiry grazes.** 5 further episodes (2 in NG, 3 in HG) trip the tripwire for **zero days past expiry** and are **not permanent** — in every case the front rolls cleanly to a high-OI successor (peak OI 1,195 to 187,328) the very next trading day. Root cause: several contracts' recorded `expiration` timestamp falls late in the trading day (17:00–19:30), so the front is technically still "current" through the calendar date immediately following before the t-1 OI crossover completes on the next available trading day — a timestamp/date-granularity artifact of the tripwire's date-only comparison, not a deadlock. Reported for completeness since the tripwire technically fires; not counted among the 11 permanent episodes and not evidence of a new bug.
+
+#### Counterfactual "multi-candidate / OI-max roll" diagnostic (read-only; `src/roll.py` unmodified)
+
+Standalone script (`_carry-research-workspace/step_c_counterfactual_roll.py`), never executed against `src/roll.py` and producing roll dates only — no carry, no returns. Candidate rule, strictly t-1 OI throughout (same look-ahead-safety mechanism as the production rule; "multi-candidate / OI-max," never "lookahead" — that term is reserved for temporal leakage, which is untouched):
+
+> front(t) = argmax OI_{t-1} among outrights with expiry >= current front's expiry, ties -> earlier expiry, hold-on-missing unchanged.
+
+**Residual stuck fronts (requested: expect zero).** 17 of 18 symbols are completely clean. The 18th (NG) technically trips the tripwire once — and it is the **identical** transient graze already characterized above (contract `192047__2010-06-28`, held through 2010-06-29, rolling cleanly to a 187,328-peak-OI successor on 2010-06-30), verified by direct inspection of the counterfactual series to resolve in exactly the same single day as under the current rule. **Zero genuine (multi-day or permanent) residual stuck fronts under the counterfactual rule.**
+
+**Rolls/year vs known market cycles (sanity check).** The counterfactual rule's roll cadence recovers to plausible, cycle-consistent levels for every symbol that was catastrophically under-rolling under the current rule:
+
+| Symbol | Current rule | Counterfactual | Known/implied cycle |
+|---|---|---|---|
+| PL | 0.12/yr (2 rolls in 16 years) | 4.11/yr | Quarterly (4 liquid months) |
+| PA | 0.19/yr (3 rolls in 16 years) | 4.05/yr | Quarterly (4 liquid months) |
+| HO | 1.87/yr | 11.95/yr | Monthly (12 liquid months) |
+| RB | 6.41/yr | 12.01/yr | Monthly (12 liquid months) |
+| HE | 0.37/yr (6 rolls in 16 years) | 7.10/yr | ~8 listed months, liquidity gradient |
+| GF | 1.00/yr | 7.66/yr | ~8 listed months |
+| GC, SI, HG | 6–7/yr | ~5/yr | Bimonthly (6 liquid months) |
+| ZC, ZS, ZM, ZL, ZW | 0.6–1.7/yr | 4.2–5.2/yr | 5–8 listed months |
+| CL, NG, KE | 12.0 / 12.0 / 5.0/yr (unchanged) | identical | Already correct under current rule |
+
+Full per-symbol table in `_carry-research-workspace/counterfactual_roll_summary.json`.
+
+**Roll-date diffs vs current rule, where the current rule was not stuck.** For 7 symbols (CL, HO, RB, NG, ZW, KE, HE — restricted to each symbol's own pre-deadlock window where applicable), the two rules agree **exactly**, zero differing dates. For the remaining 11, the counterfactual rule diverges even before the current rule's own eventual deadlock — because it sometimes rolls a few days earlier, and in several cases skips an intermediate thinly-traded serial contract entirely rather than briefly visiting it. Illustrative example (PL, its cleanest short window): the current rule rolls June-2010 → July-2010 (2010-06-07) → **August-2010** (2010-07-23, where it then gets permanently stuck, matching the pattern-(a) episode above); the counterfactual rolls June → July (same date) → **October-2010 directly** (2010-06-30), skipping both the near-dead August and September serials in one step — exactly matching PL's known Jan/Apr/Jul/Oct quarterly liquid cycle. This is a genuine behavioral difference from the current rule, not just a timing shift, and is a design trade-off for adjudication: the multi-candidate rule can skip a low-but-nonzero-liquidity intermediate contract entirely (as here, and similarly for GC's October 2010 contract, peak OI 39,155 vs neighboring liquid months' 600K–800K) rather than passing through it as a brief "front" state the way the current rule does.
+
+#### Serial-settlement quality (informs whether carry.py's "next" needs the same treatment)
+
+For every outright contract's own active window (first appearance through its own expiration), fraction of days with a settlement present and staleness evidence (zero-change run lengths), split by whether the contract's peak OI is below (`dead_serial`) or above (`liquid`) a 1,000-contract threshold (`_carry-research-workspace/serial_settlement_quality.csv`, 3,335 contracts):
+
+| Group | n | Mean fill fraction | Median fill fraction | Mean stale fraction | Median stale fraction |
+|---|---|---|---|---|---|
+| liquid | 2,502 | 0.9715 | 0.9724 | 0.1903 | 0.1845 |
+| dead_serial | 833 | 0.9477 | 0.9715 | 0.2061 | 0.1862 |
+
+**The medians are nearly identical** — the typical dead-serial contract still gets settlement coverage indistinguishable from a liquid one (CME evidently still publishes a daily settlement, real or theoretical, regardless of OI). **The mean is pulled down by a real tail**: the worst dead-serial contracts have next to no settlement data at all — e.g. the four grains contracts expiring 2014-07-14 (ZC 214367, ZS 475373, ZM 537239, ZL 344868 — the same four-way cluster underlying 4 of the 10 pattern-(a) episodes above) each show only 2–3 settlements across a 1,265-day nominal window (fill fraction 0.0017–0.0024). These are already exactly the case the existing next-settle-missing-or-≤0-is-NaN ruling (`DEVIATIONS.md`, 2026-07-11) was built to handle — a "next" this sparse would produce NaN carry on nearly every date regardless of any roll-rule change.
+
+**A distinct, separately-flagged residual: staleness, not just coverage.** ZW's dead-serial contracts show a mean stale fraction of **0.6029** (60% of day-to-day settlement changes are exactly flat) vs 0.1947 for ZW's own liquid contracts — a gap far larger than any other symbol's. A settlement that is *present* but frequently a carried-forward copy would pass the existing missing-value NaN guard untouched (it is not missing) while still feeding an economically stale price into the carry formula's denominator. This is flagged as a genuine, symbol-specific residual concern for the same adjudication, distinct from the coverage question the existing NaN ruling already addresses.
+
+#### Proposed handling (not implemented this session)
+
+Not resolved here, per the governing instruction. Options for Aaron + advisor to adjudicate, informed by the above:
+(a) amend §3's roll rule to the multi-candidate/OI-max design characterized above (or a variant), pre-registered as a dated deviation before any re-run;
+(b) keep the current single-candidate rule and instead exclude/flag the 11 permanently-affected symbols or specific date ranges;
+(c) something else. Whatever is decided, the serial-settlement staleness finding (ZW in particular) suggests carry.py's "next" selection may need its own, possibly distinct, treatment even if the roll rule itself is amended — these are related but not identical questions.
+
+### §7 Updated findings register
+
+| ID | Severity | Status | Finding | Resolution / handling |
+|---|---|---|---|---|
+| F1 | High | RESOLVED | Parent symbology mixes outright and spread/combo instruments. | Unchanged — field-based, date-aware, 20.91% outright / 79.09% spread. |
+| F2 | Medium | RESOLVED | Zero/negative-close rows in the naive "outright" set. | Unchanged — 1 row (2020-04-20 CLK0), KEEP with citation. |
+| F3 | Low / informational | Unchanged | June 2014 degraded-quality window. | Unchanged. |
+| F4 | Informational / limitation | RESOLVED, adjudicated | 99-symbol-day genuine residual gap. | Adjudicated 2026-07-11: no special handling. |
+| F5 | Operational | RESOLVED | `statistics`/`definition` did not finish pulling in session 1. | Both schemas fully delivered. |
+| F6 | High | RESOLVED (guarded in code) | `instrument_id` reuse across different real contracts (~20% of outright contracts). | Guarded in `src/instrument_filter.py`, tests added. |
+| F7 | Medium | RESOLVED (reading, not a deviation) | PA/PL show a larger unexplained OI-gap residual. | Adjudicated 2026-07-11: existing hold-on-missing behavior is a correct reading of §3, no fork, no amputation. Confirmed in this addendum to also behave correctly on the F9/F10-corrected data. |
+| F8 | Low | Recorded, no action needed | `raw_symbol`-collision identity hazard (CME single-digit-year shorthand). | No code keys on `raw_symbol` alone; recorded for future reference. |
+| F9 | Medium | **RESOLVED** | `raw_symbol` format instability within a single contract's own listed life (instrument_id 551735: "CLM19" → "CLM9" after 2 days, same contract for ~9 more years). | Dropped `raw_symbol` from `_contract_key`; key is now `instrument_id + expiration.date()`. Synthetic-fixture test added. |
+| F10 | High | **RESOLVED** | `expiration` time-of-day correction mid-life (instrument_id 827180, KE) fractures one contract's OI history, permanently freezing the roll rule once the fracture lands on a real crossover. F7's hold-on-missing ruling confirmed correct on cleaned-up data, not implicated. | `_contract_key` truncates expiration to calendar date. Unification audit: 25 unify / 7 keep-separate / 27 cross-asset (reproduces the informal 25-unify estimate exactly). Tests added, including the required negative-case (genuine F6 reuse does not unify). |
+| F11 | High — **NEW, for adjudication** | **OPEN** | §3's roll rule structurally deadlocks whenever the next-listed contract is a listed-but-illiquid ("dead") serial month or its crossover otherwise never fires against a single fixed candidate — 11 of 18 symbols permanently stuck post-F9/F10-fix (10 dead-serial, 1 overlap-never-crosses), 5 further transient single-day grazes (benign, non-permanent). A read-only counterfactual "multi-candidate / OI-max roll" simulator resolves all permanent cases and recovers cycle-consistent roll cadences per-symbol, with zero genuine residual stuck fronts. Serial-settlement quality check finds coverage is typically adequate even for dead-serial contracts (median ≈ liquid), but flags a distinct staleness concern for ZW specifically. | Not resolved here. Dead-serial map, episode census, counterfactual diagnostic, and serial-settlement quality check all complete; full detail in this addendum and `_carry-research-workspace/`. No `roll.py` change made; no premise-test run performed. |
