@@ -35,3 +35,35 @@ This was not covered by Step 0's zero-price guard, which is explicitly scoped to
 **Ruling (authority: Aaron + advisor):** a next-contract settlement ≤ 0 is treated identically to a missing (NaN) one — carry is not computable that day, exactly the same handling `pipeline.py::symbol_carry_series()` already applies to a genuinely absent settlement. This is the symmetric, minimal extension of an existing convention, not a new threshold or parameter: a reported 0.00 for a dormant, not-yet-traded contract is no more economically meaningful than an absent value. Implemented in `src/pipeline.py::symbol_carry_series()`; `src/carry.py::compute_carry()` itself is unchanged (still a pure function assuming valid positive inputs, now always called guarded). Tests added (`tests/test_pipeline.py`) proving both the NaN outcome and that no RuntimeWarning is raised.
 
 The premise-test run that first surfaced this (which produced `RuntimeWarning`s and was never committed) is superseded by a clean re-run under this ruling.
+
+### 2026-07-15 — F11 Amendment A1: roll rule (§3) amended, single-candidate next-listed crossover → multi-candidate OI-max
+
+**Authority:** Aaron + advisor.
+
+**Amended definition.** At each date `t`, the front for a symbol is the outright contract (date-aware registry, per the F9/F10 `_contract_key` fix) that maximizes OI at `t−1` among candidates whose expiration is ≥ the incumbent front's expiration; ties break toward the earlier expiration (so the incumbent is retained on ties); if OI at `t−1` is unobserved for every candidate, the incumbent is held (the F7 ruling, unchanged). Initialization on a symbol's first evaluable day: argmax OI at `t−1` over all live outrights, ties to the earlier expiration. Monotonicity holds by construction (the candidate set never includes earlier expirations than the incumbent's).
+
+**Why this is a legitimate amendment and not result-fitting:**
+1. No valid result has ever existed — all three prior runs (Runs 1–3) were invalidated by identity-resolution bugs before any premise number was trusted, and Run 4 has not run; the amendment is made under zero result temptation.
+2. The registered rule fails structurally on documented market structure — exchange-listed month cycles include serial months that never bear open interest (census: `docs/DATA_QA_REPORT.md` finding F11 — 11 permanent deadlocks across 13 symbols; PL frozen since a contract expired Aug 2010).
+3. The replacement was validated read-only before adoption: the standalone counterfactual (`_carry-research-workspace/step_c_counterfactual_roll.py`, never executed against `src/roll.py` until this amendment) found zero genuine residual stuck fronts, and roll cadences matching known liquid cycles (e.g. PL: 0.12 → 4.11 rolls/yr against its quarterly cycle).
+4. Lower-DOF than the alternatives — liquidity-cycle lookup tables and per-symbol rule forks were considered and rejected as researcher degrees of freedom.
+
+**F7 note.** F7's hold-on-missing ruling behaved correctly throughout and is retained verbatim, unchanged by this amendment — only the candidate set considered at each date changed (single next-listed contract → every contract with expiration ≥ the incumbent's), never the hold-on-missing fallback or the t−1 temporal lag.
+
+**N_trials.** Unaffected — still 14 per §10. This amendment changes how the front/next series is *constructed*, not the count of constructed strategy-return series.
+
+**Implementation.** `src/roll.py::compute_front_contract_series()` — the state machine itself is replaced in place (same function name/signature, so every existing caller is unaffected); `src/pipeline.py::assert_front_not_past_expiry()` (the permanent tripwire) is retained unchanged and re-verified against the amended output.
+
+### 2026-07-15 — F11 Amendment A2: carry "next" (§3) amended, next-listed → next OI-bearing
+
+**Authority:** Aaron + advisor.
+
+**Amended definition.** `next(t)` is the earliest-expiration outright with expiration strictly greater than the front's AND OI at `t−1` strictly positive; if none exists, carry is undefined (NaN) that date, under the existing missing-data handling (§3's return convention; the 2026-07-11 next-settle-≤0-is-NaN ruling above). The annualization denominator `D` remains the actual calendar-day gap between the two contracts' expirations — unchanged by this amendment, only which contract fills the "next" role changes.
+
+**Justification.** The census's serial-settlement quality check (`docs/DATA_QA_REPORT.md` finding F11) — ZW's dead-serial months show 60% flat settlements vs 19% for liquid months, plus a real low-coverage tail concentrated in specific never-traded serial contracts — demonstrates that listed-curve marks on never-traded serials are exchange-algorithm artifacts unfit for signal measurement, not genuine market-clearing prices. Carry must measure the slope of the *traded* curve; this also matches the nearby-contract convention of the carry literature. The `OI > 0` condition is an existence threshold, not a tuned one — no magnitude parameter is introduced, and no threshold beyond strict positivity is used anywhere in this amendment.
+
+**Interaction with A1.** Independent of A1's roll-rule amendment — A2 only changes which contract's settlement fills the carry formula's denominator/next-price role; it does not change which contract is held as the front position. A symbol's front (A1) and its carry "next" (A2) can therefore legitimately differ from the single-candidate next-listed contract in different, independently-motivated ways on the same date.
+
+**N_trials.** Unaffected — still 14 per §10, for the same reason as A1.
+
+**Implementation.** `src/pipeline.py::symbol_carry_series()` — the next-contract selection step is replaced; `src/carry.py::compute_carry()` itself is unchanged (still a pure function taking an already-selected front/next pair and their prices/expiries).

@@ -236,3 +236,12 @@ Every cross-referenced source used in this document, gathered in one place:
 - `multi-asset-tsmom-research/config.py`, `src/sizing.py`, `src/portfolio.py`, `src/validation.py`, `src/seasonality.py`, `src/xsmom_stats.py`, `STUDY_SUMMARY.md`, `output/COST_AND_TURNOVER_REPORT.md` — every inherited convention in §4 and §6, read-only, unmodified.
 - CME Group contract-specification pages, Ironbeam and Barchart contract-spec pages (per-row citations in §5) — tick sizes and contract multipliers.
 - Koijen, Moskowitz, Pedersen & Vrugt (2018), "Carry," *Journal of Financial Economics* — economic-mechanism citation only, no results referenced (§1).
+
+---
+
+## Amendments log
+
+Appended after the freeze, per §11's deviations protocol. The body above (through the Traceability index) remains byte-identical to the frozen 2026-07-10 version — §3's original text is unedited; these amendments modify how §3's definitions are *operationalized* in code, not the frozen document's own words. Full normative text for each amendment lives in the dated `DEVIATIONS.md` entry it points to; this section is a pointer and one-sentence summary only.
+
+- **A1 (2026-07-15) — Roll rule (§3) amended: single-candidate next-listed crossover → multi-candidate OI-max.** The front is now the outright that maximizes OI at t−1 among candidates whose expiration is ≥ the incumbent's, rather than only ever comparing to the single immediately-next-listed contract. Normative text: `DEVIATIONS.md`, "2026-07-15 — F11 Amendment A1."
+- **A2 (2026-07-15) — Carry "next" (§3) amended: next-listed → next OI-bearing.** "Next" for the carry formula is now the earliest-expiration outright with strictly positive OI at t−1, rather than simply the next-listed contract regardless of whether it ever trades. Normative text: `DEVIATIONS.md`, "2026-07-15 — F11 Amendment A2."
