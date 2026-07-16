@@ -317,29 +317,71 @@ def symbol_front_series(oi_wide: pd.DataFrame, listed_sequence: list) -> pd.Seri
 def symbol_carry_series(outright_panel: pd.DataFrame, front_series: pd.Series,
                          listed_sequence: list, asset: str) -> pd.Series:
     """
-    Sec 3 carry: for each date, front = front_series.at[date], next = the
-    contract immediately after front in listed_sequence. Looks up each
-    contract's settlement (on that date) and expiration (constant per
-    contract) and calls carry.compute_carry(). Returns NaN for dates where
-    the next contract doesn't exist yet (front is the last-listed
-    contract) or either settlement is missing that day -- a NaN carry is a
-    genuine "not computable" case per Sec 2's entry rule, not an error.
+    Sec 3 carry, amended by F11 Amendment A2 (DEVIATIONS.md, 2026-07-15):
+    for each date, front = front_series.at[date]; next(t) is the
+    earliest-expiration outright with expiration strictly greater than
+    front's AND OI at t-1 strictly positive -- scanning forward through
+    listed_sequence past the front's own position, skipping any listed-but-
+    never-traded ("dead serial") candidate whose t-1 OI is missing or zero,
+    landing on the first one that is genuinely OI-bearing. Same t-1 lag
+    discipline as the A1 roll rule (never same-day OI): the OI used to
+    decide date t's "next" is always t-1's, so this selection is exactly as
+    look-ahead-safe as A1's front selection, just applied to a different
+    role. Pre-A2, "next" was simply listed_sequence[pos + 1] regardless of
+    whether that contract ever traded -- amended because F11's census found
+    the serial-settlement quality check making dead-serial marks unfit for
+    signal measurement (see DEVIATIONS.md's A2 entry for the full
+    justification).
+
+    Returns NaN for dates where: front isn't in listed_sequence; no later
+    contract has strictly positive t-1 OI (A2's own "none exists" case,
+    including every date for a front that IS the last-listed contract, and
+    every symbol's very first date, where t-1 is structurally unobserved
+    for everything); either settlement is missing; or the next-settlement
+    is <= 0 (2026-07-11 ruling, unchanged by A2, checked after next(t) is
+    selected). A NaN carry is a genuine "not computable" case, not an
+    error.
     """
     sub = outright_panel[outright_panel["asset"] == asset]
     settle_by_key_date = sub.set_index(["_contract_key", "date"])["settlement"]
+    oi_by_key_date = sub.set_index(["_contract_key", "date"])["oi"]
     expiry_by_key = sub.drop_duplicates(subset=["_contract_key"]).set_index("_contract_key")["expiration"]
 
     assert_front_not_past_expiry(front_series, expiry_by_key.to_dict(), asset)
 
     index_of = {key: i for i, key in enumerate(listed_sequence)}
+    dates = list(front_series.index)
+    prev_date_of = {dates[i]: dates[i - 1] for i in range(1, len(dates))}
+
     out_index, out_values = [], []
     for date, front_key in front_series.items():
         pos = index_of.get(front_key)
-        if pos is None or pos + 1 >= len(listed_sequence):
+        if pos is None:
             out_index.append(date)
             out_values.append(float("nan"))
             continue
-        next_key = listed_sequence[pos + 1]
+
+        # A2 next-selection: earliest-expiration later-listed outright with
+        # strictly positive OI at t-1. front is last-listed (nothing after
+        # it) and the series' first date (no t-1 at all) both fall through
+        # to next_key staying None, exactly like the pre-A2 "no next" case.
+        next_key = None
+        t_minus_1 = prev_date_of.get(date)
+        if t_minus_1 is not None:
+            for candidate in listed_sequence[pos + 1:]:
+                try:
+                    oi_prev = oi_by_key_date.at[(candidate, t_minus_1)]
+                except KeyError:
+                    continue
+                if pd.notna(oi_prev) and oi_prev > 0:
+                    next_key = candidate
+                    break
+
+        if next_key is None:
+            out_index.append(date)
+            out_values.append(float("nan"))
+            continue
+
         try:
             f_price = settle_by_key_date.at[(front_key, date)]
             n_price = settle_by_key_date.at[(next_key, date)]
@@ -349,8 +391,8 @@ def symbol_carry_series(outright_panel: pd.DataFrame, front_series: pd.Series,
             continue
         # Sec 3's carry formula divides by next_settle; a reported settlement
         # <= 0 is treated identically to a missing one (NaN) -- adjudicated
-        # 2026-07-11, DEVIATIONS.md (Aaron + advisor): found on this
-        # pipeline's first real-data run (RuntimeWarning: divide by zero),
+        # 2026-07-11, DEVIATIONS.md (Aaron + advisor), unchanged by A2: found on
+        # this pipeline's first real-data run (RuntimeWarning: divide by zero),
         # not covered by Step 0's held-front-only zero-price guard. Almost
         # entirely far-dated, not-yet-actively-traded contracts CME lists
         # years ahead of real trading, reported as settlement=0.00 rather

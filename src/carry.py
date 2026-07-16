@@ -8,9 +8,13 @@ schema) for the front and next contract respectively. D: calendar days
 between the two contracts' expiry dates (Databento `definition` schema).
 Positive carry = backwardation (front trades above next, annualized).
 
-"Next contract" is the contract immediately following the front in the
-exchange-listed expiry sequence -- see roll.py for how "front" itself is
-determined.
+"Next contract": per F11 Amendment A2 (DEVIATIONS.md, 2026-07-15), the
+earliest-expiration outright after the front with strictly positive OI at
+t-1 -- see pipeline.py::symbol_carry_series() for the selection logic, and
+roll.py for how "front" itself is determined (Amendment A1). This module
+is unaffected by either amendment: compute_carry()/compute_carry_series()
+are pure functions over an already-selected (front, next) pair's prices
+and expiries, agnostic to how that pair was chosen.
 """
 from datetime import date
 

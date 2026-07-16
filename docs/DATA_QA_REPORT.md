@@ -480,3 +480,57 @@ Not resolved here, per the governing instruction. Options for Aaron + advisor to
 | F9 | Medium | **RESOLVED** | `raw_symbol` format instability within a single contract's own listed life (instrument_id 551735: "CLM19" → "CLM9" after 2 days, same contract for ~9 more years). | Dropped `raw_symbol` from `_contract_key`; key is now `instrument_id + expiration.date()`. Synthetic-fixture test added. |
 | F10 | High | **RESOLVED** | `expiration` time-of-day correction mid-life (instrument_id 827180, KE) fractures one contract's OI history, permanently freezing the roll rule once the fracture lands on a real crossover. F7's hold-on-missing ruling confirmed correct on cleaned-up data, not implicated. | `_contract_key` truncates expiration to calendar date. Unification audit: 25 unify / 7 keep-separate / 27 cross-asset (reproduces the informal 25-unify estimate exactly). Tests added, including the required negative-case (genuine F6 reuse does not unify). |
 | F11 | High — **NEW, for adjudication** | **OPEN** | §3's roll rule structurally deadlocks whenever the next-listed contract is a listed-but-illiquid ("dead") serial month or its crossover otherwise never fires against a single fixed candidate — 11 of 18 symbols permanently stuck post-F9/F10-fix (10 dead-serial, 1 overlap-never-crosses), 5 further transient single-day grazes (benign, non-permanent). A read-only counterfactual "multi-candidate / OI-max roll" simulator resolves all permanent cases and recovers cycle-consistent roll cadences per-symbol, with zero genuine residual stuck fronts. Serial-settlement quality check finds coverage is typically adequate even for dead-serial contracts (median ≈ liquid), but flags a distinct staleness concern for ZW specifically. | Not resolved here. Dead-serial map, episode census, counterfactual diagnostic, and serial-settlement quality check all complete; full detail in this addendum and `_carry-research-workspace/`. No `roll.py` change made; no premise-test run performed. |
+
+---
+
+## Addendum — 2026-07-16, F11 Amendments A1/A2 Implemented and Verified
+
+**Status: F11 RESOLVED (adjudicated via amendment).** Per `DEVIATIONS.md`'s 2026-07-15 A1/A2 entries (authority: Aaron + advisor), F11's structural roll-rule deadlock is resolved by amending §3's roll rule (A1: multi-candidate OI-max) and carry "next" selection (A2: next OI-bearing). This addendum records the acceptance-gate verification performed before committing the implementation.
+
+### Gate 1 — Parity vs the validated counterfactual: PASS
+
+Production `src/roll.py::compute_front_contract_series()` (post-A1) compared against an independent re-implementation of the validated counterfactual (`_carry-research-workspace/step_e_parity_and_gates.py`), across all 18 symbols, full real-data history. **Zero differing dates on any symbol** — bit-identical.
+
+### Gate 2 — Stuck-front census on production code: PASS (zero permanent episodes)
+
+17 of 18 symbols completely clean. The 18th (NG) trips the tripwire once — verified to be the identical, already-characterized transient graze (contract `192047__2010-06-28`, held through 2010-06-29, resolves cleanly the next day) documented in F11's original census. **Zero genuine (multi-day or permanent) stuck fronts under the amended production rule.**
+
+### Gate 3 — Fill-count acceptance: PASS, criterion completed with one new named exception (F12)
+
+Initial check against the 2–14/year holiday-consistent baseline found 11 of 303 symbol-year cells (all in 2014, plus CL 2012) outside range. Per-date classification (`_carry-research-workspace/gate3_full_classification.csv`) against the US holiday calendar, weekends, and the three previously-adjudicated named windows (F3 June 2014; F4 September 2014; F4 February 2012 livestock-only) resolved all but 8 dates. Those 8 are diagnosed below as **F12**, after which every one of the 11 violations is fully accounted for. **Restated acceptance criterion: 2–14/year baseline, plus F3's window, F4's two windows, plus F12's post-roll same-day silence — under this criterion, zero unexplained residual across all 303 symbol-year cells.**
+
+### F12 — NEW, informational: post-roll same-day data silence
+
+**Finding.** The 8 fill-dates left unexplained by the holiday/weekend/F3/F4 classification (6 in CL 2012: 2012-03-21, 05-23, 06-21, 08-22, 09-21, 12-20; 2 in CL 2014: 2014-04-23, 05-21) share an identical, consistent three-part signature, verified individually for every one:
+1. **`nearest_roll_event_days = 0`** — the fill-date is the trading day immediately after a roll event (the day the front just moved off this contract).
+2. **Absent at the raw `statistics` source** — confirmed by direct lookup against the per-day settlement rows, not lost anywhere in this pipeline's own joins or panels.
+3. **Absent from `ohlcv-1d` too** — the abandoned contract has zero rows (no close, no volume) in the other schema either, that same day.
+
+**Interpretation.** The just-rolled-off contract occasionally goes completely dark — no data published in *either* schema — on the very first day it is no longer front, when real trading interest has shifted decisively and immediately to the new front rather than winding down gradually over the following days (contrast with the more common case where an old front still shows thin but real activity for a few more days after losing front status). This is a genuine, if narrow, real-market illiquidity/abandonment effect at the data-provenance level, not a defect in either CME's publication pipeline or this project's own code — the raw-source and `ohlcv-1d` cross-checks both independently confirm the exchange itself published nothing for that contract that day.
+
+**Disposition.** Documented, benign market behavior, not a pipeline defect. No code change needed — the existing missing-settlement mark-to-last convention (`DEVIATIONS.md`, 2026-07-11) already handles this correctly and generally, regardless of *why* a settlement is missing. Recorded here so this specific, now-diagnosed source of missingness is never re-investigated as if new. Full per-date classification (all 11 symbol-years, not just the 8 unexplained) in `_carry-research-workspace/gate3_full_classification.csv`.
+
+### Gate 4 — Real-data truncation-invariance: PASS
+
+17 of 18 symbols pass directly. NG is blocked only because `symbol_carry_series()`'s own internal tripwire re-fires on the same already-known transient graze noted under Gate 2 — not a genuine truncation-invariance mismatch (the underlying carry computation was never reached far enough to compare).
+
+### Report-set housekeeping
+
+The stale, invalidated Run 3 premise report (generated 2026-07-11T17:40, predating F11's discovery) is archived at `_carry-research-workspace/_invalidated_runs/PREMISE_REPORT_run3.md` with an invalidation header. `reports/` now holds no artifacts, ready for Run 4.
+
+### §7 Updated findings register
+
+| ID | Severity | Status | Finding | Resolution / handling |
+|---|---|---|---|---|
+| F1 | High | RESOLVED | Parent symbology mixes outright and spread/combo instruments. | Unchanged — field-based, date-aware, 20.91% outright / 79.09% spread. |
+| F2 | Medium | RESOLVED | Zero/negative-close rows in the naive "outright" set. | Unchanged — 1 row (2020-04-20 CLK0), KEEP with citation. |
+| F3 | Low / informational | Unchanged | June 2014 degraded-quality window. | Unchanged. |
+| F4 | Informational / limitation | RESOLVED, adjudicated | 99-symbol-day genuine residual gap. | Adjudicated 2026-07-11: no special handling. |
+| F5 | Operational | RESOLVED | `statistics`/`definition` did not finish pulling in session 1. | Both schemas fully delivered. |
+| F6 | High | RESOLVED (guarded in code) | `instrument_id` reuse across different real contracts (~20% of outright contracts). | Guarded in `src/instrument_filter.py`, tests added. |
+| F7 | Medium | RESOLVED (reading, not a deviation) | PA/PL show a larger unexplained OI-gap residual. | Adjudicated 2026-07-11: existing hold-on-missing behavior is a correct reading of §3, no fork, no amputation. |
+| F8 | Low | Recorded, no action needed | `raw_symbol`-collision identity hazard (CME single-digit-year shorthand). | No code keys on `raw_symbol` alone; recorded for future reference. |
+| F9 | Medium | RESOLVED | `raw_symbol` format instability within a single contract's own listed life. | Dropped `raw_symbol` from `_contract_key`. Tests added. |
+| F10 | High | RESOLVED | `expiration` time-of-day correction mid-life fractures one contract's OI history, permanently freezing the roll rule. | `_contract_key` truncates expiration to calendar date. Tests added. |
+| F11 | High | **RESOLVED (adjudicated via amendment)** | §3's roll rule structurally deadlocked on listed-but-illiquid serials. | Amended per `DEVIATIONS.md` 2026-07-15 (A1: multi-candidate OI-max roll rule; A2: next-OI-bearing carry-next). Verified via 4 acceptance gates against the validated counterfactual (this addendum) — zero regressions, zero genuine residual stuck fronts. |
+| F12 | Low — **NEW, informational** | **Characterized, no action needed** | The abandoned (just-rolled-off) front contract occasionally has zero data in *both* `statistics` and `ohlcv-1d` on the trading day immediately following a roll (8 instances found across CL 2012/2014 while diagnosing Gate 3). | Confirmed genuine, benign real-market illiquidity/abandonment effect (absent at source, not a pipeline defect). Already handled correctly by the existing missing-settlement mark-to-last convention; no code change needed. |

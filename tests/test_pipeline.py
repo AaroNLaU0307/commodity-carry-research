@@ -299,6 +299,11 @@ def test_symbol_settle_wide_matches_input():
 
 
 def test_symbol_carry_series_matches_hand_computation_on_a_non_rolled_day():
+    """day0 is structurally NaN under A2 (no t-1 OI exists at all for the
+    very first date -- see test_symbol_carry_series_nan_on_first_date_no_t_minus_1
+    below), so this hand-computation check targets day1, the first date
+    A2's next-selection has an observable t-1 OI to work with (day0's real
+    OI: CLF1=1000, CLG1=200, both > 0, so CLG1 qualifies as next on day1)."""
     defn = _synthetic_definition_lookup()
     stats = _synthetic_settlement_oi_panel()
     outright = build_outright_panel(defn, stats)
@@ -307,11 +312,27 @@ def test_symbol_carry_series_matches_hand_computation_on_a_non_rolled_day():
     front = symbol_front_series(oi_wide, seq)
     carry = symbol_carry_series(outright, front, seq, "CL")
 
-    # day0: front=CLF1 (50.0, exp 2020-02-01), next=CLG1 (55.0, exp 2020-03-01), D=29 days
+    # day1: front=CLF1 (50.5, exp 2020-02-01), next=CLG1 (55.5, exp 2020-03-01), D=29 days
     from src.carry import compute_carry
     from datetime import date
-    expected = compute_carry(50.0, 55.0, date(2020, 2, 1), date(2020, 3, 1))
-    assert carry.iloc[0] == pytest.approx(expected)
+    expected = compute_carry(50.5, 55.5, date(2020, 2, 1), date(2020, 3, 1))
+    assert carry.iloc[1] == pytest.approx(expected)
+
+
+def test_symbol_carry_series_nan_on_first_date_no_t_minus_1():
+    """A2 (DEVIATIONS.md 2026-07-15): next(t) requires strictly positive OI
+    at t-1. A symbol's very first date has no t-1 at all (nothing precedes
+    it), so no candidate can ever qualify that day, regardless of how
+    liquid it later becomes -- carry is NaN on day0 unconditionally, not a
+    bug, and not the same case as a genuinely dead-serial next."""
+    defn = _synthetic_definition_lookup()
+    stats = _synthetic_settlement_oi_panel()
+    outright = build_outright_panel(defn, stats)
+    seq = symbol_listed_sequence(outright, "CL")
+    oi_wide = symbol_oi_wide(outright, "CL", seq)
+    front = symbol_front_series(oi_wide, seq)
+    carry = symbol_carry_series(outright, front, seq, "CL")
+    assert pd.isna(carry.iloc[0])
 
 
 def test_symbol_carry_series_nan_when_next_settlement_is_zero_or_negative():
@@ -319,12 +340,15 @@ def test_symbol_carry_series_nan_when_next_settlement_is_zero_or_negative():
     <= 0 -- found on the pipeline's first real-data run to be common for
     far-dated, not-yet-actively-traded contracts reported as settlement
     0.00 rather than omitted -- is treated as NaN (not computable),
-    symmetric with the pre-existing missing-settlement handling. Also
-    proves this does NOT raise/warn (a real divide-by-zero on the first
-    real-data run, now guarded)."""
+    symmetric with the pre-existing missing-settlement handling, unchanged
+    by A2. Targets day1 (not day0): day0 is unconditionally NaN under A2
+    regardless of settlement (see the dedicated test above), so checking
+    day0 here would pass vacuously without ever exercising this rule.
+    Also proves this does NOT raise/warn (a real divide-by-zero on the
+    first real-data run, now guarded)."""
     defn = _synthetic_definition_lookup()
     stats = _synthetic_settlement_oi_panel()
-    stats.loc[(stats["date"] == pd.Timestamp("2020-01-01")) & (stats["instrument_id"] == 101), "settlement"] = 0.0
+    stats.loc[(stats["date"] == pd.Timestamp("2020-01-02")) & (stats["instrument_id"] == 101), "settlement"] = 0.0
     outright = build_outright_panel(defn, stats)
     seq = symbol_listed_sequence(outright, "CL")
     oi_wide = symbol_oi_wide(outright, "CL", seq)
@@ -333,7 +357,69 @@ def test_symbol_carry_series_nan_when_next_settlement_is_zero_or_negative():
     with warnings.catch_warnings():
         warnings.simplefilter("error")  # any RuntimeWarning (e.g. divide by zero) fails this test
         carry = symbol_carry_series(outright, front, seq, "CL")
-    assert pd.isna(carry.iloc[0])
+    assert pd.isna(carry.iloc[1])
+
+
+def test_A2_carry_next_skips_a_zero_oi_serial_and_lands_on_the_oi_bearing_month():
+    """A2 (DEVIATIONS.md 2026-07-15): the carry-next selection must skip a
+    listed-but-never-traded ("dead serial") candidate and land on the next
+    genuinely OI-bearing contract further out, even though the dead serial
+    is closer in expiry order. Three contracts: CLF1 (front), a dead-serial
+    CLG1 (zero OI throughout), and a real, later, liquid CLH1."""
+    dates = pd.date_range("2020-01-01", periods=4, freq="D")
+    rows = []
+    for d in dates:
+        rows.append({"date": d, "instrument_id": 100, "asset": "CL", "raw_symbol": "CLF1",
+                     "instrument_class": "F", "expiration": pd.Timestamp("2020-02-01")})
+        rows.append({"date": d, "instrument_id": 101, "asset": "CL", "raw_symbol": "CLG1",
+                     "instrument_class": "F", "expiration": pd.Timestamp("2020-03-01")})
+        rows.append({"date": d, "instrument_id": 102, "asset": "CL", "raw_symbol": "CLH1",
+                     "instrument_class": "F", "expiration": pd.Timestamp("2020-04-01")})
+    defn = pd.DataFrame(rows)
+    stats = pd.DataFrame({
+        "date": list(dates) * 3,
+        "instrument_id": [100] * 4 + [101] * 4 + [102] * 4,
+        "settlement": [50.0, 50.5, 51.0, 51.5] + [55.0, 55.5, 56.0, 56.5] + [60.0, 60.5, 61.0, 61.5],
+        "oi": [1000, 900, 800, 700] + [0, 0, 0, 0] + [500, 480, 460, 440],  # CLG1 (id 101) is a permanent dead serial
+    })
+    outright = build_outright_panel(defn, stats)
+    seq = symbol_listed_sequence(outright, "CL")
+    front = pd.Series(["100__2020-02-01"] * 4, index=dates)  # front pinned to CLF1 throughout
+    carry = symbol_carry_series(outright, front, seq, "CL")
+
+    from src.carry import compute_carry
+    from datetime import date
+    # day1: t-1 (day0) OI -- CLG1=0 (disqualified), CLH1=500 (qualifies) -> next=CLH1, skipping CLG1 entirely
+    expected = compute_carry(50.5, 60.5, date(2020, 2, 1), date(2020, 4, 1))  # CLH1's day1 settlement = 60.5
+    assert carry.iloc[1] == pytest.approx(expected)
+    assert not pd.isna(carry.iloc[1])
+    assert not pd.isna(carry.iloc[2])
+    assert not pd.isna(carry.iloc[3])
+
+
+def test_A2_carry_next_nan_when_no_oi_bearing_later_contract_exists():
+    """A2's own 'none exists' case: every later-listed candidate has zero
+    (never positive) OI throughout -- carry must be NaN on every date past
+    the first, not fall back to the nearest dead-serial contract."""
+    dates = pd.date_range("2020-01-01", periods=4, freq="D")
+    rows = []
+    for d in dates:
+        rows.append({"date": d, "instrument_id": 100, "asset": "CL", "raw_symbol": "CLF1",
+                     "instrument_class": "F", "expiration": pd.Timestamp("2020-02-01")})
+        rows.append({"date": d, "instrument_id": 101, "asset": "CL", "raw_symbol": "CLG1",
+                     "instrument_class": "F", "expiration": pd.Timestamp("2020-03-01")})
+    defn = pd.DataFrame(rows)
+    stats = pd.DataFrame({
+        "date": list(dates) * 2,
+        "instrument_id": [100] * 4 + [101] * 4,
+        "settlement": [50.0, 50.5, 51.0, 51.5] + [55.0, 55.5, 56.0, 56.5],
+        "oi": [1000, 900, 800, 700] + [0, 0, 0, 0],  # the only later-listed contract never gains OI
+    })
+    outright = build_outright_panel(defn, stats)
+    seq = symbol_listed_sequence(outright, "CL")
+    front = pd.Series(["100__2020-02-01"] * 4, index=dates)
+    carry = symbol_carry_series(outright, front, seq, "CL")
+    assert carry.isna().all()
 
 
 def test_symbol_carry_series_nan_when_front_is_last_listed_contract():
