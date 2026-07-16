@@ -4,7 +4,7 @@
 
 A pre-registered research project testing whether the commodity carry risk premium (basis / roll yield on futures term structure) is exploitable across a multi-sector CME futures universe, under a falsification-first protocol consistent with the sibling repos in this research program.
 
-> **Status:** pre-registration frozen — see [`preregistration/PREREGISTRATION.md`](preregistration/PREREGISTRATION.md).
+> **Status:** Phase 1 complete — results under review; see `reports/`.
 
 Phase 0 verified that Databento's `GLBX.MDP3` dataset delivers 18 CME futures across 4 sectors (energy, metals, grains, livestock), each with individual contract-month history sufficient for term-structure construction, settlement prices, open interest, and an expiry calendar, at a verified cost well within the available free credit. Full findings: [`docs/DATA_FEASIBILITY_REPORT.md`](docs/DATA_FEASIBILITY_REPORT.md), [`docs/DECISION_MEMO.md`](docs/DECISION_MEMO.md), [`docs/SAMPLE_AUDIT.md`](docs/SAMPLE_AUDIT.md).
 
