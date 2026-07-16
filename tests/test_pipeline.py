@@ -225,6 +225,30 @@ def test_assert_front_not_past_expiry_silent_when_front_rolls_before_its_own_exp
     assert_front_not_past_expiry(front, expiry_by_key, "TEST")  # must not raise
 
 
+def test_assert_front_not_past_expiry_handles_tz_aware_expiry_against_tz_naive_date():
+    """Real-data bug caught on this pipeline's first run against raw DBN
+    files (not synthetic fixtures): Databento's `definition` schema returns
+    tz-aware (UTC) timestamps for `expiration`, while front_series' own
+    dates are always tz-naive (derived from an 8-digit filename, never a
+    Databento data column) -- `pd.Timestamp(expiry) < pd.Timestamp(date)`
+    raised `TypeError: Cannot compare tz-naive and tz-aware timestamps`.
+    No prior fixture constructed a tz-aware Timestamp, so this was never
+    exercised before real data surfaced it. Both directions checked: a
+    tz-aware expiry that IS past (must still raise) and one that is NOT
+    (must stay silent) -- proving the fix compares wall-clock values
+    correctly, not just that it avoids crashing."""
+    dates = pd.date_range("2020-01-01", periods=3, freq="D")
+
+    stuck_front = pd.Series(["A", "A", "A"], index=dates)
+    stuck_expiry = {"A": pd.Timestamp("2020-01-02", tz="UTC")}
+    with pytest.raises(AssertionError, match="STUCK FRONT"):
+        assert_front_not_past_expiry(stuck_front, stuck_expiry, "TEST")
+
+    clean_front = pd.Series(["A", "A", "B"], index=dates)
+    clean_expiry = {"A": pd.Timestamp("2020-01-05", tz="UTC"), "B": pd.Timestamp("2020-02-01", tz="UTC")}
+    assert_front_not_past_expiry(clean_front, clean_expiry, "TEST")  # must not raise
+
+
 def test_symbol_listed_sequence_sorted_by_expiration():
     defn = _synthetic_definition_lookup()
     stats = _synthetic_settlement_oi_panel()
@@ -358,6 +382,28 @@ def test_symbol_carry_series_nan_when_next_settlement_is_zero_or_negative():
         warnings.simplefilter("error")  # any RuntimeWarning (e.g. divide by zero) fails this test
         carry = symbol_carry_series(outright, front, seq, "CL")
     assert pd.isna(carry.iloc[1])
+
+
+def test_symbol_carry_series_skip_tripwire_bypasses_the_check_only_when_explicitly_set():
+    """skip_tripwire is False by default -- the tripwire fires exactly as
+    before for every existing caller. Only when a caller explicitly opts in
+    (skip_tripwire=True, used only by the runner for the one
+    user-pre-authorized transient graze) is the internal safety-net call
+    bypassed, proving the flag is a genuine opt-in with no change to
+    default behavior."""
+    defn = _synthetic_definition_lookup()
+    stats = _synthetic_settlement_oi_panel()
+    outright = build_outright_panel(defn, stats)
+    seq = symbol_listed_sequence(outright, "CL")
+    # a front pinned to CLF1 (expires 2020-02-01) through 2020-02-05 --
+    # genuinely past its own expiry on the later days, to trigger the tripwire
+    stuck_front = pd.Series([KEY_F1] * 5, index=pd.date_range("2020-02-01", periods=5))
+
+    with pytest.raises(AssertionError, match="STUCK FRONT"):
+        symbol_carry_series(outright, stuck_front, seq, "CL")  # default: fires
+
+    carry = symbol_carry_series(outright, stuck_front, seq, "CL", skip_tripwire=True)  # must not raise
+    assert len(carry) == 5
 
 
 def test_A2_carry_next_skips_a_zero_oi_serial_and_lands_on_the_oi_bearing_month():

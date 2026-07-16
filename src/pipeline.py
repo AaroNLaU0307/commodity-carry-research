@@ -233,6 +233,22 @@ def audit_contract_key_unification(definition_lookup: pd.DataFrame) -> dict:
     }
 
 
+def _tz_naive(ts: pd.Timestamp) -> pd.Timestamp:
+    """Databento's `definition` schema returns tz-aware (UTC) timestamps for
+    `expiration` when loaded from raw DBN files; front_series' own dates are
+    always tz-naive (derived from an 8-digit filename via
+    build_definition_lookup()/build_settlement_oi_panel(), never from a
+    Databento data column). Comparing the two directly raises `TypeError:
+    Cannot compare tz-naive and tz-aware timestamps` -- surfaced on this
+    pipeline's first run against raw (not synthetic-fixture) data, since no
+    prior synthetic fixture constructed a tz-aware Timestamp. Strips tz
+    info without any zone conversion (`tz_localize(None)` keeps the
+    wall-clock value exactly as reported, matching how `_contract_key`
+    already treats `expiration` as a date-level concept via `.dt.date` in
+    build_outright_panel()) -- a no-op for already-naive input."""
+    return ts.tz_localize(None) if ts.tzinfo is not None else ts
+
+
 def assert_front_not_past_expiry(front_series: pd.Series, expiry_by_key: dict, asset: str) -> None:
     """
     Permanent tripwire (Phase 1b Riders): raises immediately if the held
@@ -248,7 +264,7 @@ def assert_front_not_past_expiry(front_series: pd.Series, expiry_by_key: dict, a
         expiry = expiry_by_key.get(contract)
         if expiry is None:
             continue
-        if pd.Timestamp(expiry) < pd.Timestamp(date):
+        if _tz_naive(pd.Timestamp(expiry)) < _tz_naive(pd.Timestamp(date)):
             raise AssertionError(
                 f"STUCK FRONT: {asset}'s held front contract {contract!r} expired {expiry} "
                 f"but is still recorded as held on {date} -- the roll rule's crossover "
@@ -315,7 +331,7 @@ def symbol_front_series(oi_wide: pd.DataFrame, listed_sequence: list) -> pd.Seri
 
 
 def symbol_carry_series(outright_panel: pd.DataFrame, front_series: pd.Series,
-                         listed_sequence: list, asset: str) -> pd.Series:
+                         listed_sequence: list, asset: str, skip_tripwire: bool = False) -> pd.Series:
     """
     Sec 3 carry, amended by F11 Amendment A2 (DEVIATIONS.md, 2026-07-15):
     for each date, front = front_series.at[date]; next(t) is the
@@ -341,13 +357,25 @@ def symbol_carry_series(outright_panel: pd.DataFrame, front_series: pd.Series,
     is <= 0 (2026-07-11 ruling, unchanged by A2, checked after next(t) is
     selected). A NaN carry is a genuine "not computable" case, not an
     error.
+
+    skip_tripwire: False by default (unchanged behavior for every existing
+    caller). Set True ONLY by a caller that has already independently
+    verified, on this exact front_series, that the only tripwire violation
+    present is the one user-pre-authorized transient graze (NG,
+    `192047__2010-06-28`, non-permanent -- PREREGISTRATION.md's F11
+    amendment record; re-verified in `docs/DATA_QA_REPORT.md`'s Gate 2/4).
+    Does not change what counts as a violation or weaken the tripwire's own
+    logic in any way -- assert_front_not_past_expiry() itself is untouched
+    and remains the strict, unconditional default for every other call
+    site, including this function's own default.
     """
     sub = outright_panel[outright_panel["asset"] == asset]
     settle_by_key_date = sub.set_index(["_contract_key", "date"])["settlement"]
     oi_by_key_date = sub.set_index(["_contract_key", "date"])["oi"]
     expiry_by_key = sub.drop_duplicates(subset=["_contract_key"]).set_index("_contract_key")["expiration"]
 
-    assert_front_not_past_expiry(front_series, expiry_by_key.to_dict(), asset)
+    if not skip_tripwire:
+        assert_front_not_past_expiry(front_series, expiry_by_key.to_dict(), asset)
 
     index_of = {key: i for i, key in enumerate(listed_sequence)}
     dates = list(front_series.index)
