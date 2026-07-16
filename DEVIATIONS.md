@@ -67,3 +67,15 @@ The premise-test run that first surfaced this (which produced `RuntimeWarning`s 
 **N_trials.** Unaffected — still 14 per §10, for the same reason as A1.
 
 **Implementation.** `src/pipeline.py::symbol_carry_series()` — the next-contract selection step is replaced; `src/carry.py::compute_carry()` itself is unchanged (still a pure function taking an already-selected front/next pair and their prices/expiries).
+
+### 2026-07-16 — Sec 8 item 7 specification completion: fixed-calendar roll rule day-count
+
+**Authority:** Aaron + advisor. Written before this robustness item's computation runs — no fixed-calendar-rule numbers exist anywhere at the time of this entry (`src/robustness.py`'s synthetic-fixture tests are the only thing that has exercised this code so far).
+
+**Gap.** `PREREGISTRATION.md` §8 item 7 registers "Fixed-calendar roll rule instead of OI-crossover (both arms)" as a non-gating robustness diagnostic, without specifying the exact calendar convention (which day, how many days before expiry).
+
+**Specification.** Roll timing = the last business day of the month preceding the front contract's expiry month — the standard, parameter-free academic convention; no day-count N to tune. Candidate selection at each roll uses the same A2 existence filter (earliest-expiration outright with expiration > incumbent's and OI at t−1 strictly positive) — using the pre-A1 next-listed-only logic here instead would re-import F11's dead-serial deadlock and test nothing new about the amended rule's *timing* specifically, which is the whole point of this cross-check.
+
+**Why this is not result-motivated.** Decided after the primary family's own numbers were already known (both arms failed to promote, commit f52602e), but without any reference to what THIS specific robustness item's own results would show — no fixed-calendar-rule computation exists at the time of this entry, and the chosen convention has no free parameter that could be tuned toward any particular outcome. This is a non-gating diagnostic; nothing about promotion depends on it, and the primary family's own promotion verdict (already decided, already committed) is unaffected regardless of what this item shows.
+
+**Implementation.** `src/robustness.py::fixed_calendar_front_series()`. 7 synthetic-fixture tests in `tests/test_robustness.py` (this file plus the other Sec 8 constructions), including roll-timing-before/at/after the scheduled date and the existence-filter skipping a dead-serial candidate, before any real-data execution.
