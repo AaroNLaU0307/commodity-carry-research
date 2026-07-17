@@ -536,3 +536,21 @@ The stale, invalidated Run 3 premise report (generated 2026-07-11T17:40, predati
 | F10 | High | RESOLVED | `expiration` time-of-day correction mid-life fractures one contract's OI history, permanently freezing the roll rule. | `_contract_key` truncates expiration to calendar date. Tests added. |
 | F11 | High | **RESOLVED (adjudicated via amendment)** | §3's roll rule structurally deadlocked on listed-but-illiquid serials. | Amended per `DEVIATIONS.md` 2026-07-15 (A1: multi-candidate OI-max roll rule; A2: next-OI-bearing carry-next). Verified via 4 acceptance gates against the validated counterfactual (this addendum) — zero regressions, zero genuine residual stuck fronts. |
 | F12 | Low — **NEW, informational** | **Characterized, no action needed** | The abandoned (just-rolled-off) front contract occasionally has zero data in *both* `statistics` and `ohlcv-1d` on the trading day immediately following a roll (8 instances found across CL 2012/2014 while diagnosing Gate 3). | Confirmed genuine, benign real-market illiquidity/abandonment effect (absent at source, not a pipeline defect). Already handled correctly by the existing missing-settlement mark-to-last convention; no code change needed. |
+
+---
+
+## Addendum — 2026-07-17, Register close-out
+
+Written alongside the falsification write-up (`README.md`, `docs/MECHANISM_NOTES.md`,
+`DESIGN_DECISIONS.md`) now that Phase 1c is complete and reviewed. No new investigation was performed
+for this addendum — it is a bookend confirming the register above needs no further status change.
+
+**Register status: closed. Zero findings OPEN.** Of the twelve findings logged across this project's
+data-acquisition and Phase 1a–1c history: nine are RESOLVED in code or by adjudication (F1, F2, F4, F5,
+F6, F7, F9, F10, F11 — F11 via the A1/A2 amendment, `DEVIATIONS.md` 2026-07-15), one is characterized as
+benign with no action needed (F12), and two are informational/recorded with no defect implied and no
+action ever pending (F3, F8). None of the twelve fed into, or were altered by, the primary family's
+`NOT PROMOTED` verdict (`reports/PRIMARY_REPORT.md`) — that verdict rests on the bootstrap/BH-FDR/DSR
+gates alone, evaluated on data this register already certified clean. No further QA work is anticipated
+against this corpus; a future amendment would only be warranted by a new finding, not by revisiting one
+already closed here.
