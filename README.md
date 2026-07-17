@@ -19,8 +19,9 @@ registered variants approach the gates either.
   time-series (H2: `sign(carry)` per symbol) commodity carry — 18 CME futures, 4 sectors (energy,
   metals, grains, livestock), 2010-06-07 through 2026-06-30, settlement-price-based signals (never
   last-trade), monthly rebalance, inverse-vol leg weighting and portfolio-level vol targeting inherited
-  from a sibling study, and a deliberately conservative frozen cost table (max(1 tick, unavailable
-  half-spread) + $2.50/side all-in fee) — `preregistration/PREREGISTRATION.md` §2–§5.
+  from a sibling study, and a deliberately conservative frozen cost table (max(1 tick, conservative
+  half-spread estimate) + $2.50/side all-in fee allowance) —
+  `preregistration/PREREGISTRATION.md` §2–§5.
 - **Verdicts table:**
 
   | Arm | Premise (point est.) | Sharpe | 95% CI | BH-FDR | CI excl. 0 | Sharpe≥0.30 | 2×cost>0 | DSR≥0.95 | Promotion |
