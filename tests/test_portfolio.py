@@ -28,6 +28,17 @@ def test_xs_raw_signal_top_and_bottom_tercile():
     assert sig["C"] == 0.0 and sig["D"] == 0.0           # middle, untouched
 
 
+def test_xs_raw_signal_gives_a_single_name_cross_section_no_position():
+    """n_leg(1) == 0: no leg exists, so the lone name must stay flat rather
+    than be shorted by an empty-slice artefact (reached item 1's sectors)."""
+    assert (xs_raw_signal(pd.Series({"A": 0.3})) == 0.0).all()
+    from src.robustness import sector_neutral_xs_raw_signal
+    snapshot = pd.Series({"CL": 0.2, "HO": -0.1, "LE": 0.5})
+    signal = sector_neutral_xs_raw_signal(snapshot, {"CL": "energy", "HO": "energy", "LE": "livestock"})
+    assert signal["LE"] == 0.0
+    assert signal["CL"] == 0.5 and signal["HO"] == -0.5
+
+
 def test_ts_raw_signal_is_sign_of_carry():
     carry = pd.Series({"A": 0.05, "B": -0.02, "C": 0.0})
     sig = ts_raw_signal(carry)

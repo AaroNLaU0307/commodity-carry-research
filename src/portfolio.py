@@ -38,11 +38,16 @@ def xs_raw_signal(carry_snapshot: pd.Series) -> pd.Series:
     """Sec 4 H1: rank the live cross-section by carry; +1 for the top
     tercile, -1 for the bottom tercile, 0 for the middle. `carry_snapshot`
     must already be restricted to the live (entered) symbols for this
-    month -- see module docstring."""
+    month -- see module docstring. A cross-section too small for a leg
+    (n_leg == 0, i.e. one name) gets no position: `ranked.index[-0:]` would
+    otherwise select every name for the short leg (correction, 2026-09-27;
+    it reached item 1's single-name sectors)."""
     n_live = len(carry_snapshot)
     leg = n_leg(n_live)
     ranked = carry_snapshot.sort_values(ascending=False)
     signal = pd.Series(0, index=carry_snapshot.index, dtype=float)
+    if leg == 0:
+        return signal
     signal.loc[ranked.index[:leg]] = 1.0
     signal.loc[ranked.index[-leg:]] = -1.0
     return signal
