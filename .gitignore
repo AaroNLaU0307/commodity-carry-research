@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.ruff_cache/
 
 # Raw licensed/vendor data is never committed -- checksums and provenance
 # manifests are (see data/README.md). Keep this exclusion broad.

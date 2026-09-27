@@ -12,11 +12,13 @@ round-trip cost (closing that leg + opening the new front) is subtracted.
 There is no price splicing across the roll -- the series is chained per
 HELD contract, never a synthetic continuous price.
 
-Scope note: this module charges the ROLL leg's cost only (a contract-level
-event). Portfolio-level REBALANCE cost -- charged on the change in a
-symbol's portfolio weight at each monthly rebalance, independent of whether
-that symbol also happens to roll that month -- is a separate layer applied
-in portfolio.py, using the same costs.cost_per_side_pct() primitive.
+Scope note: this module computes the ROLL leg's cost only (a contract-level
+event), embedded as a per-unit drag in the returned series. The portfolio
+layer (primary.compute_arm_daily_returns) takes it as the difference from
+the cost-free series and charges it on |position|, so a short position pays
+it too; trading cost on every change in the levered position is charged
+there as well, using the same costs.cost_per_side_pct() primitive
+(portfolio.cost_pct_by_month).
 """
 import pandas as pd
 

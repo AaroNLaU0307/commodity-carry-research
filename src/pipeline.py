@@ -608,15 +608,24 @@ def month_end_carry_panel(carry_by_symbol: dict, entry_dates: dict = None) -> pd
 
 
 def month_end_next_month_return_panel(daily_returns_by_symbol: dict, month_end_index: pd.DatetimeIndex,
-                                       entry_dates: dict = None) -> pd.DataFrame:
+                                       entry_dates: dict = None, execution_lag: int = 0) -> pd.DataFrame:
     """
     For each month-end t in month_end_index, each symbol's compounded net
     return over the NEXT calendar month (t, t+1] -- i.e. from the day
     after month-end t through month-end t+1 inclusive -- aligned at index
     t, so that carry_panel.loc[t] and this panel's .loc[t] are directly
     comparable as (signal(t), realized-outcome-over-t-to-t+1) per Sec 7.
+
+    Same timing as primary.expand_monthly_to_daily(): at execution_lag=0
+    (registered) the first return in the window is settle(t) ->
+    settle(t+1); execution_lag=k shifts the window k of the symbol's own
+    trading rows later (first return settle(t+k) -> settle(t+k+1)). A
+    shifted window that would run past the symbol's last row is NaN.
     """
     from .data_loader import apply_entry_rule
+    if int(execution_lag) != execution_lag or execution_lag < 0:
+        raise ValueError(f"execution_lag must be a non-negative integer, got {execution_lag!r}")
+    lag = int(execution_lag)
     if entry_dates is None:
         entry_dates = {s: config.SAMPLE_START for s in config.ALL_SYMBOLS}
         entry_dates["KE"] = config.KE_ENTRY_DATE
@@ -627,8 +636,10 @@ def month_end_next_month_return_panel(daily_returns_by_symbol: dict, month_end_i
         values = []
         for i in range(len(month_end_index) - 1):
             t, t_next = month_end_index[i], month_end_index[i + 1]
-            window = daily[(daily.index > t) & (daily.index <= t_next)]
-            if len(window) == 0:
+            start = int(daily.index.searchsorted(t, side="right")) + lag
+            stop = int(daily.index.searchsorted(t_next, side="right")) + lag
+            window = daily.iloc[start:stop]
+            if len(window) == 0 or stop > len(daily):
                 values.append(float("nan"))
             else:
                 values.append(float((1.0 + window).prod() - 1.0))

@@ -7,13 +7,17 @@ OUTRIGHT ONLY, which is the actually relevant population for the roll rule
 and carry formula. Integrity/inventory check only, per Hard Rule 1.
 """
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 import databento as db
 
-DATA_DIR = Path(r"C:\Users\Aaron\quant-data\commodity-carry")
-WORKSPACE = Path(r"C:\Users\Aaron\OneDrive\Desktop\Quant trade\_carry-research-workspace")
+# Paths: repo-relative defaults, overridable by the DATA_DIR / WORKSPACE environment variables (src/config.py).
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+from src.config import DATA_DIR, WORKSPACE
+
 OUT_PATH = WORKSPACE / "phase1a_qa_ohlcv_outright_split_findings.json"
 
 CME_UNIVERSE = {

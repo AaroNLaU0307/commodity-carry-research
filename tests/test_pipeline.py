@@ -538,6 +538,24 @@ def test_month_end_next_month_return_panel_compounds_correctly():
     assert pd.isna(panel.loc[pd.Timestamp("2020-03-31"), "A"])  # no month after the last month-end
 
 
+def test_month_end_next_month_return_panel_execution_lag_shifts_window_one_trading_row():
+    """Premise timing matches the primary's: at execution_lag=1 month-end
+    t's outcome window starts one trading row later (first return
+    settle(t+1) -> settle(t+2)) and ends one row after t_next; a window
+    running past the data is NaN, not truncated."""
+    month_ends = pd.DatetimeIndex(["2020-01-31", "2020-02-28", "2020-03-31"])
+    idx = pd.DatetimeIndex(["2020-01-31", "2020-02-03", "2020-02-04", "2020-02-28", "2020-03-02", "2020-03-31"])
+    daily = pd.Series([0.05, 0.01, 0.02, 0.03, 0.04, 0.06], index=idx)
+    entry = {"A": pd.Timestamp("2020-01-01")}
+
+    lag0 = month_end_next_month_return_panel({"A": daily}, month_ends, entry_dates=entry)
+    lag1 = month_end_next_month_return_panel({"A": daily}, month_ends, entry_dates=entry, execution_lag=1)
+    assert lag0.loc[pd.Timestamp("2020-01-31"), "A"] == pytest.approx(1.01 * 1.02 * 1.03 - 1.0)
+    assert lag1.loc[pd.Timestamp("2020-01-31"), "A"] == pytest.approx(1.02 * 1.03 * 1.04 - 1.0)
+    assert lag0.loc[pd.Timestamp("2020-02-28"), "A"] == pytest.approx(1.04 * 1.06 - 1.0)
+    assert pd.isna(lag1.loc[pd.Timestamp("2020-02-28"), "A"])  # would need a row after 2020-03-31
+
+
 def test_month_end_next_month_return_panel_nan_when_no_returns_in_window():
     month_ends = pd.DatetimeIndex(["2020-01-31", "2020-02-29"])
     daily = pd.Series([0.01], index=pd.DatetimeIndex(["2020-01-15"]))  # nothing in Feb

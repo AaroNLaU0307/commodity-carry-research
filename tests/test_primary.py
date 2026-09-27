@@ -2,7 +2,7 @@
 Tests for src/primary.py -- the Phase 1c orchestration layer. All synthetic,
 per Hard Rule 4 (tests before real data). Since every underlying formula
 (vol.rolling_volatility, vol.asset_target_weight, vol.portfolio_leverage_scalar,
-costs.cost_per_side_pct, portfolio.xs_raw_signal/ts_raw_signal/apply_rebalance_costs)
+costs.cost_per_side_pct, portfolio.xs_raw_signal/ts_raw_signal/cost_pct_by_month)
 is already independently tested elsewhere, these tests focus on what's NEW
 here: correct temporal sequencing (no look-ahead), correct live-universe
 handling per month, and correct aggregation -- verified by calling the same
@@ -106,7 +106,9 @@ def test_vol_targeting_scalar_and_gross_cap_behavior():
     for d in daily_index[61:]:  # skip the NaN ramp-up window
         expected_leverage = vol_mod.portfolio_leverage_scalar(expected_vol_lagged.at[d], gross_daily.at[d])
         assert result["leverage"].at[d] == pytest.approx(expected_leverage)
-        assert result["daily_net_returns"].at[d] == pytest.approx(expected_leverage * pre_lev.at[d])
+        assert result["daily_gross_returns"].at[d] == pytest.approx(expected_leverage * pre_lev.at[d])
+        assert result["daily_net_returns"].at[d] == pytest.approx(
+            result["daily_gross_returns"].at[d] - result["trading_cost"].at[d] - result["roll_cost"].at[d])
 
     # gross cap: gross=10 with realistic vol would demand far more leverage
     # than MAX_GROSS_LEVERAGE allows
@@ -121,67 +123,116 @@ def test_vol_targeting_scalar_and_gross_cap_behavior():
             assert lev * 10.0 <= config.MAX_GROSS_LEVERAGE + 1e-9
 
 
-def test_cost_charged_on_scripted_rebalance_only_on_execution_day():
-    """Rebalance cost (weight CHANGE month-to-month) must appear exactly
-    once, on the first daily date of the new window (the execution day),
-    matching costs.cost_per_side_pct() exactly -- zero on every other day,
-    including the month-end signal date itself."""
-    daily_index = pd.date_range("2020-01-01", periods=65, freq="D")
-    month_end_index = pd.DatetimeIndex([daily_index[29], daily_index[59]])
-    weights_by_month = pd.DataFrame({"A": [1.0, -1.0]}, index=month_end_index)  # full flip, delta=2.0
+def _alternating(daily_index, size=0.001):
+    return pd.Series([size if i % 2 == 0 else -size for i in range(len(daily_index))], index=daily_index)
+
+
+def test_trading_cost_charged_on_every_change_in_the_levered_position():
+    """Leverage pinned at the gross cap (3.0 for |w|=1) isolates the
+    rebalance: the book is entered when leverage first exists and flipped
+    at the second window's first day; each trade costs |delta p| x cost per
+    side at that month's settlement, and nothing else is charged."""
+    daily_index = pd.date_range("2020-01-01", periods=130, freq="D")
+    month_end_index = pd.DatetimeIndex([daily_index[29], daily_index[89]])
+    weights_by_month = pd.DataFrame({"A": [1.0, -1.0]}, index=month_end_index)
     settle_by_month = pd.DataFrame({"A": [80.0, 82.0]}, index=month_end_index)
-    zero_returns = pd.Series(0.0, index=daily_index)
 
     result = compute_arm_daily_returns(
-        weights_by_month, {"A": zero_returns}, settle_by_month, month_end_index, daily_index,
+        weights_by_month, {"A": _alternating(daily_index)}, settle_by_month, month_end_index, daily_index,
         symbol_of_column={"A": "CL"},
     )
-    execution_day_1 = daily_index[daily_index > month_end_index[0]][0]
-    execution_day_2 = daily_index[daily_index > month_end_index[1]][0]
+    lev = result["leverage"]
+    entry_day = lev[lev > 0].index[0]
+    flip_day = daily_index[daily_index > month_end_index[1]][0]
+    assert (lev.loc[entry_day:] == config.MAX_GROSS_LEVERAGE).all()  # cap binds throughout
 
-    # month-end 1: weight moves 0 -> 1.0 (delta=1.0)
-    expected_cost_1 = 1.0 * costs.cost_per_side_pct("CL", 80.0)
-    assert result["rebalance_cost"].at[execution_day_1] == pytest.approx(expected_cost_1)
-    # month-end 2: weight moves 1.0 -> -1.0 (delta=2.0)
-    expected_cost_2 = 2.0 * costs.cost_per_side_pct("CL", 82.0)
-    assert result["rebalance_cost"].at[execution_day_2] == pytest.approx(expected_cost_2)
-
-    assert result["rebalance_cost"].at[month_end_index[0]] == 0.0  # not on the signal date itself
-    non_execution_days = [d for d in daily_index if d not in (execution_day_1, execution_day_2)]
-    assert all(result["rebalance_cost"].at[d] == 0.0 for d in non_execution_days)
+    cost = result["trading_cost"]
+    assert cost.at[entry_day] == pytest.approx(3.0 * costs.cost_per_side_pct("CL", 80.0))
+    assert cost.at[flip_day] == pytest.approx(6.0 * costs.cost_per_side_pct("CL", 82.0))
+    assert (cost.drop([entry_day, flip_day]) == 0.0).all()
 
 
-def test_roll_cost_embedded_in_daily_returns_flows_through_scaled_by_weight():
-    """Roll-leg cost is already charged inside daily_returns_by_symbol
-    (pipeline.symbol_daily_returns -> returns.chain_returns) before this
-    module ever sees it -- this test proves compute_arm_daily_returns does
-    not double-charge or drop it: a scripted day with an embedded roll-cost
-    drag must appear in pre_leverage_returns scaled by exactly that day's
-    weight, nothing more or less."""
-    daily_index = pd.date_range("2020-01-01", periods=65, freq="D")
-    month_end_index = pd.DatetimeIndex([daily_index[29], daily_index[59]])
-    weights_by_month = pd.DataFrame({"A": [0.5, 0.5]}, index=month_end_index)  # no rebalance, no rebalance cost
+def test_daily_leverage_resize_is_charged_as_turnover():
+    """With an uncapped, time-varying leverage the book is resized every
+    day; each resize |L(d) - L(d-1)| x |w| is a trade and is charged."""
+    daily_index = pd.date_range("2020-01-01", periods=140, freq="D")
+    month_end_index = pd.DatetimeIndex([daily_index[9], daily_index[139]])
+    weights_by_month = pd.DataFrame({"A": [0.1, 0.1]}, index=month_end_index)
     settle_by_month = pd.DataFrame({"A": [80.0, 80.0]}, index=month_end_index)
-
-    roll_day = daily_index[35]
-    sym_returns = pd.Series(0.001, index=daily_index)
-    sym_returns.at[roll_day] = -0.05  # a scripted roll day: a real return-chaining roll would embed a cost drag like this
+    rng = np.random.default_rng(3)
+    returns = pd.Series(rng.normal(0.0, 0.01, len(daily_index)) * np.linspace(0.5, 2.0, len(daily_index)),
+                        index=daily_index)
 
     result = compute_arm_daily_returns(
-        weights_by_month, {"A": sym_returns}, settle_by_month, month_end_index, daily_index,
+        weights_by_month, {"A": returns}, settle_by_month, month_end_index, daily_index,
         symbol_of_column={"A": "CL"},
     )
-    assert result["pre_leverage_returns"].at[roll_day] == pytest.approx(0.5 * -0.05)
+    lev, cost = result["leverage"], result["trading_cost"]
+    pct = costs.cost_per_side_pct("CL", 80.0)
+    resize_days = daily_index[100:139]  # well inside the single held window, no rebalance
+    for d in resize_days:
+        prev = daily_index[daily_index.get_loc(d) - 1]
+        assert cost.at[d] == pytest.approx(abs(lev.at[d] - lev.at[prev]) * 0.1 * pct)
+    assert (cost.loc[resize_days] > 0).all()
 
 
-def test_execution_timing_no_same_day_signal_to_trade():
-    """A weight decided AT month-end t must have ZERO effect on or before
-    t -- it only takes effect starting the first trading day strictly
-    after t (Sec 3: a full day separates signal from trade)."""
+def test_cost_table_does_not_move_the_leverage_path():
+    """Leverage is sized from the pre-cost series, so doubling the cost
+    table changes costs but never the vol estimate or the leverage."""
+    daily_index = pd.date_range("2020-01-01", periods=200, freq="D")
+    month_end_index = pd.DatetimeIndex([daily_index[i] for i in (29, 59, 89, 119, 149, 179)])
+    weights_by_month = pd.DataFrame({"A": [0.5, -0.5, 0.4, -0.6, 0.5, -0.5]}, index=month_end_index)
+    settle_by_month = pd.DataFrame({"A": [80.0, 81.0, 79.0, 82.0, 80.0, 81.0]}, index=month_end_index)
+    rng = np.random.default_rng(4)
+    returns = {"A": pd.Series(rng.normal(0.0, 0.01, len(daily_index)), index=daily_index)}
+
+    r1 = compute_arm_daily_returns(weights_by_month, returns, settle_by_month, month_end_index, daily_index,
+                                   symbol_of_column={"A": "CL"}, cost_multiplier=1.0)
+    r2 = compute_arm_daily_returns(weights_by_month, returns, settle_by_month, month_end_index, daily_index,
+                                   symbol_of_column={"A": "CL"}, cost_multiplier=2.0)
+    pd.testing.assert_series_equal(r1["leverage"], r2["leverage"])
+    assert r2["daily_net_returns"].sum() < r1["daily_net_returns"].sum()
+
+
+def test_roll_cost_is_a_drag_for_short_positions_too():
+    """The per-symbol roll cost (gross minus net-of-roll-cost return) is
+    charged on |position|: a short book pays it rather than earning it."""
+    daily_index = pd.date_range("2020-01-01", periods=100, freq="D")
+    month_end_index = pd.DatetimeIndex([daily_index[9], daily_index[99]])
+    weights_by_month = pd.DataFrame({"A": [-0.5, -0.5]}, index=month_end_index)
+    settle_by_month = pd.DataFrame({"A": [80.0, 80.0]}, index=month_end_index)
+    gross = _alternating(daily_index)
+    roll_day = daily_index[80]
+    net = gross.copy()
+    net.at[roll_day] -= 0.01  # roll-leg cost embedded by returns.chain_returns
+
+    result = compute_arm_daily_returns(
+        weights_by_month, {"A": net}, settle_by_month, month_end_index, daily_index,
+        symbol_of_column={"A": "CL"}, gross_returns_by_symbol={"A": gross},
+    )
+    p = result["positions"].at[roll_day, "A"]
+    assert p < 0
+    assert result["roll_cost"].at[roll_day] == pytest.approx(abs(p) * 0.01)
+    assert result["daily_net_returns"].at[roll_day] == pytest.approx(
+        p * gross.at[roll_day] - abs(p) * 0.01 - result["trading_cost"].at[roll_day])
+    assert (result["roll_cost"].drop(roll_day) == 0.0).all()
+
+
+def _settle_path(daily_index):
+    settle = pd.Series(100.0 * np.cumprod(1.0 + 0.001 * (1 + np.arange(len(daily_index)) % 7)), index=daily_index)
+    return settle, settle / settle.shift(1) - 1.0  # r(d) = settle(d)/settle(d-1) - 1, as returns.chain_returns
+
+
+def test_default_execution_lag_enters_at_the_signal_settlement():
+    """Registered primary timing (execution_lag=0, the weights.shift(1)
+    convention; preregistration/AMENDMENT_2026-09-27.md): a month-end-t
+    weight has no effect on or before t, and the first return it earns is
+    settle(t) -> settle(t+1) -- entry at the same settlement the signal is
+    computed from. There is no full trading day between signal and entry."""
     daily_index = pd.date_range("2020-01-01", periods=40, freq="D")
     month_end_index = pd.DatetimeIndex([daily_index[19], daily_index[-1]])
     weights_by_month = pd.DataFrame({"A": [1.0, 1.0]}, index=month_end_index)
-    daily_returns = pd.Series(0.01, index=daily_index)  # nonzero every day, to make a same-day leak visible
+    settle, daily_returns = _settle_path(daily_index)
 
     daily_w = expand_monthly_to_daily(weights_by_month, month_end_index, daily_index)
     on_or_before = daily_index[daily_index <= month_end_index[0]]
@@ -193,8 +244,32 @@ def test_execution_timing_no_same_day_signal_to_trade():
         month_end_index, daily_index, symbol_of_column={"A": "CL"},
     )
     assert (result["pre_leverage_returns"].loc[on_or_before] == 0.0).all()
-    first_execution_day = daily_index[daily_index > month_end_index[0]][0]
-    assert result["pre_leverage_returns"].at[first_execution_day] != 0.0
+    t, t1 = daily_index[19], daily_index[20]
+    assert result["pre_leverage_returns"].at[t1] == pytest.approx(settle.at[t1] / settle.at[t] - 1.0)
+
+
+def test_execution_lag_1_first_earns_settle_t_plus_1_to_t_plus_2():
+    """Registered sensitivity (execution_lag=1): entry at settle(t+1), so
+    the month-end-t weight earns nothing on t+1 and first earns
+    settle(t+1) -> settle(t+2); the premise panel shares the timing."""
+    daily_index = pd.date_range("2020-01-01", periods=40, freq="D")
+    month_end_index = pd.DatetimeIndex([daily_index[19], daily_index[-1]])
+    weights_by_month = pd.DataFrame({"A": [1.0, 1.0]}, index=month_end_index)
+    settle, daily_returns = _settle_path(daily_index)
+
+    result = compute_arm_daily_returns(
+        weights_by_month, {"A": daily_returns},
+        pd.DataFrame({"A": [80.0, 80.0]}, index=month_end_index),
+        month_end_index, daily_index, symbol_of_column={"A": "CL"}, execution_lag=1,
+    )
+    t1, t2 = daily_index[20], daily_index[21]
+    pre = result["pre_leverage_returns"]
+    assert (pre.loc[:t1] == 0.0).all()
+    assert pre.at[t2] == pytest.approx(settle.at[t2] / settle.at[t1] - 1.0)
+    assert (result["daily_weights"].loc[t2:, "A"] == 1.0).all()
+
+    with pytest.raises(ValueError):
+        expand_monthly_to_daily(weights_by_month, month_end_index, daily_index, execution_lag=-1)
 
 
 def test_symbol_vol_and_settle_at_month_end_use_last_value_on_or_before():
@@ -221,7 +296,8 @@ def test_end_to_end_tiny_universe_net_sharpe_matches_hand_traced_computation():
     entire chain independently (calling the same underlying primitives
     directly, in a plain Python loop, not through src/primary.py) and
     checks the two daily_net_returns series match exactly, date for date.
-    This is the 'end-to-end, net Sharpe computable by hand' fixture --
+    This is the 'end-to-end, net Sharpe computable by hand' fixture (leverage
+    from the pre-cost series, every change in the levered position charged) --
     Sharpe itself is then computed the same way stats.py does (mean/std*sqrt(252))
     on both series and checked to match."""
     n = 130
@@ -257,28 +333,16 @@ def test_end_to_end_tiny_universe_net_sharpe_matches_hand_traced_computation():
             return t, daily_index[(daily_index > t) & (daily_index <= month_end_index[i + 1])]
         return t, daily_index[daily_index > t]
 
+    roots = {"A": "CL", "B": "GC"}
     daily_w = pd.DataFrame(0.0, index=daily_index, columns=["A", "B"])
+    pct = pd.DataFrame(0.0, index=daily_index, columns=["A", "B"])
     for i in range(len(month_end_index)):
         t, window = _window(i)
-        daily_w.loc[window, "A"] = weights.at[t, "A"]
-        daily_w.loc[window, "B"] = weights.at[t, "B"]
-    gross_ret = daily_w["A"] * ret_a.reindex(daily_index).fillna(0.0) + daily_w["B"] * ret_b.reindex(daily_index).fillna(0.0)
-
-    rebal = pd.Series(0.0, index=daily_index)
-    w_prev = {"A": 0.0, "B": 0.0}
-    for i in range(len(month_end_index)):
-        t, window = _window(i)
-        if len(window) == 0:
-            continue
-        exec_day = window[0]
-        cost = 0.0
-        for sym, root in (("A", "CL"), ("B", "GC")):
-            delta = abs(weights.at[t, sym] - w_prev[sym])
-            if delta > 0:
-                cost += delta * costs.cost_per_side_pct(root, settle_by_month.at[t, sym])
-            w_prev[sym] = weights.at[t, sym]
-        rebal.at[exec_day] = cost
-    pre_lev = gross_ret - rebal
+        for sym in ("A", "B"):
+            daily_w.loc[window, sym] = weights.at[t, sym]
+            pct.loc[window, sym] = costs.cost_per_side_pct(roots[sym], settle_by_month.at[t, sym])
+    rets = pd.DataFrame({"A": ret_a, "B": ret_b}).reindex(daily_index).fillna(0.0)
+    pre_lev = (daily_w * rets).sum(axis=1)  # pre-cost: the vol input
 
     port_vol_lagged = vol_mod.rolling_volatility(pre_lev).shift(1)
     gross_by_month = weights.abs().sum(axis=1)
@@ -286,10 +350,17 @@ def test_end_to_end_tiny_universe_net_sharpe_matches_hand_traced_computation():
     for i in range(len(month_end_index)):
         t, window = _window(i)
         gross_daily.loc[window] = gross_by_month.at[t]
-    expected_net = pd.Series(
-        [vol_mod.portfolio_leverage_scalar(port_vol_lagged.at[d], gross_daily.at[d]) * pre_lev.at[d] for d in daily_index],
-        index=daily_index,
-    )
+
+    expected, prev_pos = [], {"A": 0.0, "B": 0.0}
+    for d in daily_index:
+        lev = vol_mod.portfolio_leverage_scalar(port_vol_lagged.at[d], gross_daily.at[d])
+        value = 0.0
+        for sym in ("A", "B"):
+            pos = lev * daily_w.at[d, sym]
+            value += pos * rets.at[d, sym] - abs(pos - prev_pos[sym]) * pct.at[d, sym]
+            prev_pos[sym] = pos
+        expected.append(value)
+    expected_net = pd.Series(expected, index=daily_index)
 
     pd.testing.assert_series_equal(result["daily_net_returns"], expected_net, check_names=False)
 

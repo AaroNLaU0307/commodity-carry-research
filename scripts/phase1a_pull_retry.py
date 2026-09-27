@@ -17,9 +17,11 @@ from pathlib import Path
 import databento as db
 from databento.common.error import BentoError
 
-WORKSPACE = Path(r"C:\Users\Aaron\OneDrive\Desktop\Quant trade\_carry-research-workspace")
-REPO = Path(r"C:\Users\Aaron\OneDrive\Desktop\Quant trade\commodity-carry-research")
-DATA_DIR = Path(r"C:\Users\Aaron\quant-data\commodity-carry")
+# Paths: repo-relative defaults, overridable by the DATA_DIR / WORKSPACE environment variables (src/config.py).
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+from src.config import DATA_DIR, WORKSPACE
+
 LEDGER_PATH = REPO / "docs" / "samples" / "COST_LEDGER.md"
 PULL_SUMMARY_PATH = WORKSPACE / "phase1a_pull_summary.json"
 

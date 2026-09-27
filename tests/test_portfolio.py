@@ -1,9 +1,9 @@
 """Tests for src/portfolio.py -- n_leg rounding, symbol-entry no-backfill,
-rebalance cost charging -- all synthetic, per Phase 1a Hard Rule 1."""
+per-unit trading cost -- all synthetic, per Phase 1a Hard Rule 1."""
 import pandas as pd
 import pytest
 
-from src.portfolio import n_leg, xs_raw_signal, ts_raw_signal, apply_rebalance_costs
+from src.portfolio import n_leg, xs_raw_signal, ts_raw_signal, cost_pct_by_month
 from src.data_loader import apply_entry_rule, live_symbols_at
 
 
@@ -69,26 +69,19 @@ def test_live_symbols_at_reflects_17_then_18():
     assert "CL" in before and "CL" in after
 
 
-def test_rebalance_cost_charged_only_on_weight_change():
-    months = pd.date_range("2020-01-31", periods=3, freq="ME")
-    weights = pd.DataFrame({"CL": [1.0, 1.0, -1.0]}, index=months)  # unchanged, then flips
-    settles = pd.DataFrame({"CL": [80.0, 82.0, 83.0]}, index=months)
-    cost = apply_rebalance_costs(weights, settles, symbol_of_column={"CL": "CL"})
-
-    # Month 0: weights_prev is NaN->filled to 0, so delta = |1.0 - 0| = 1.0 -> cost charged
-    assert cost.iloc[0] > 0
-    # Month 1: no change (1.0 -> 1.0) -> zero cost
-    assert cost.iloc[1] == pytest.approx(0.0)
-    # Month 2: full flip (1.0 -> -1.0), delta = 2.0 -> double the "per unit" cost of month0
+def test_cost_pct_by_month_prices_one_unit_at_each_month_end_settlement():
     from src.costs import cost_per_side_pct
-    expected_month2 = 2.0 * cost_per_side_pct("CL", 83.0)
-    assert cost.iloc[2] == pytest.approx(expected_month2)
+    months = pd.date_range("2020-01-31", periods=3, freq="ME")
+    settles = pd.DataFrame({"A": [80.0, 82.0, float("nan")]}, index=months)
+    pct = cost_pct_by_month(settles, symbol_of_column={"A": "CL"})
+    assert pct.iloc[0, 0] == pytest.approx(cost_per_side_pct("CL", 80.0))
+    assert pct.iloc[1, 0] == pytest.approx(cost_per_side_pct("CL", 82.0))
+    assert pct.iloc[2, 0] == 0.0  # no price to convert with -> no cost, as before
 
 
-def test_rebalance_cost_2x_multiplier():
+def test_cost_pct_by_month_2x_multiplier():
     months = pd.date_range("2020-01-31", periods=2, freq="ME")
-    weights = pd.DataFrame({"CL": [1.0, -1.0]}, index=months)
     settles = pd.DataFrame({"CL": [80.0, 81.0]}, index=months)
-    cost1 = apply_rebalance_costs(weights, settles, {"CL": "CL"}, cost_multiplier=1.0)
-    cost2 = apply_rebalance_costs(weights, settles, {"CL": "CL"}, cost_multiplier=2.0)
-    assert cost2.iloc[1] == pytest.approx(2 * cost1.iloc[1])
+    pct1 = cost_pct_by_month(settles, {"CL": "CL"}, cost_multiplier=1.0)
+    pct2 = cost_pct_by_month(settles, {"CL": "CL"}, cost_multiplier=2.0)
+    assert pct2.iloc[1, 0] == pytest.approx(2 * pct1.iloc[1, 0])

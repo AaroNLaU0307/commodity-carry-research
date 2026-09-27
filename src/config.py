@@ -1,10 +1,10 @@
 """
 Frozen parameters for the commodity carry study.
 
-Every constant here is fixed by preregistration/PREREGISTRATION.md and must
-not change without a dated DEVIATIONS.md entry (Sec 11), written before any
-deviating computation runs, by decision of Aaron + advisor -- not silently
-edited here.
+Every constant here is fixed by preregistration/PREREGISTRATION.md (as
+amended by preregistration/AMENDMENT_2026-09-27.md) and must not change
+without a dated record under Sec 11, written before any deviating
+computation runs -- not silently edited here.
 """
 import os
 from pathlib import Path
@@ -12,10 +12,20 @@ from pathlib import Path
 DATASET = "GLBX.MDP3"
 SCHEMAS = ("ohlcv-1d", "statistics", "definition")
 
-# Sec 6: raw data location. Outside the repo and outside OneDrive (Phase 1a
-# REQUIRED INPUT). Override via the DATA_DIR environment variable if needed;
-# this default is also documented in README.md.
-DATA_DIR = Path(os.environ.get("DATA_DIR", r"C:\Users\Aaron\quant-data\commodity-carry"))
+# Paths. Everything defaults to a location inside this checkout; the raw
+# corpus is licensed and never committed (data/raw/ and data/workspace/ are
+# git-ignored), so point DATA_DIR at wherever it actually lives.
+REPO_ROOT = Path(__file__).resolve().parent.parent
+# Raw Databento delivery: DATA_DIR/ohlcv-1d.dbn.zst, DATA_DIR/definition/,
+# DATA_DIR/statistics/ (data/MANIFEST.md).
+DATA_DIR = Path(os.environ.get("DATA_DIR", REPO_ROOT / "data" / "raw"))
+# Uncommitted intermediate files (pull logs, per-file checksum lists, the
+# F11 census CSV read by the optional Figure 4).
+WORKSPACE = Path(os.environ.get("WORKSPACE", REPO_ROOT / "data" / "workspace"))
+REPORTS_DIR = REPO_ROOT / "reports"
+FIGURES_DIR = REPORTS_DIR / "figures"
+# Small, committed, machine-readable results written by the runners.
+RESULTS_DIR = REPO_ROOT / "results"
 
 # Sec 2 -- universe, 18 symbols, 4 sectors, frozen from Phase 0
 UNIVERSE = {
@@ -59,11 +69,18 @@ BH_FDR_Q = 0.10
 SHARPE_GATE_MIN = 0.30
 DSR_GATE_MIN = 0.95
 
-# Sec 10 -- computation ledger. Frozen at 14 (2 primary + 12 robustness arms,
-# items 8-9 excluded as diagnostics). See PREREGISTRATION.md Sec 10 for the
-# full arithmetic. This is the N_trials input to the DSR gate everywhere in
-# this codebase -- never a locally-recomputed count.
-N_TRIALS = 14
+# Sec 10 -- computation ledger: 2 primary + 12 robustness series (items 8-9
+# excluded as diagnostics) = 14, plus the two execution-lag-1 series
+# registered by preregistration/AMENDMENT_2026-09-27.md = 16. This is the
+# N_trials input to the DSR gate everywhere in this codebase -- never a
+# locally-recomputed count. (The DSRs published before 2026-09-27 used 14.)
+N_TRIALS = 16
+
+# Execution timing (Sec 3 as amended 2026-09-27): 0 = the registered
+# primary convention (entry at the signal's own month-end settlement);
+# the lag-1 variant is a registered sensitivity.
+EXECUTION_LAG_PRIMARY = 0
+EXECUTION_LAG_SENSITIVITY = 1
 
 # Sec 5 -- cost model. Advisor ruling, 2026-07-10 (WORKSPACE/PREREG_OPEN_ITEMS.md
 # item 2): a uniform, deliberately conservative all-in per-side fee allowance

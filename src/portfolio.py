@@ -15,11 +15,11 @@ This module takes the live cross-section as given (already filtered by the
 caller / data_loader.py's entry-rule logic) rather than re-deriving entry
 dates itself, so that the entry rule has exactly one implementation.
 
-Rebalance-trade cost (as distinct from roll-leg cost in returns.py): charged
-on the CHANGE in a symbol's portfolio weight at each monthly rebalance,
-using costs.cost_per_side_pct() -- the same primitive returns.py uses for
-roll legs, applied here to portfolio weight deltas instead of contract
-switches.
+Trading cost (as distinct from roll-leg cost in returns.py):
+cost_pct_by_month() prices one unit of position change per symbol with
+costs.cost_per_side_pct() -- the same primitive returns.py uses for roll
+legs; primary.compute_arm_daily_returns() applies it to every daily change
+in the levered position (monthly rebalance and daily leverage resize).
 """
 import pandas as pd
 
@@ -53,37 +53,23 @@ def ts_raw_signal(carry_snapshot: pd.Series) -> pd.Series:
     return carry_snapshot.apply(lambda x: 1.0 if x > 0 else (-1.0 if x < 0 else 0.0))
 
 
-def apply_rebalance_costs(weights_by_month: pd.DataFrame, settle_by_month: pd.DataFrame,
-                           symbol_of_column: dict, cost_multiplier: float = 1.0) -> pd.Series:
+def cost_pct_by_month(settle_by_month: pd.DataFrame, symbol_of_column: dict,
+                      cost_multiplier: float = 1.0) -> pd.DataFrame:
     """
-    weights_by_month : DataFrame indexed by month-end date, one column per
-        symbol, values = portfolio weight established for the following
-        month (already vol-scaled -- this function only prices the trade
-        needed to MOVE from last month's weight to this month's).
-    settle_by_month : DataFrame, same shape, the settlement price used to
-        convert a weight change into a percentage cost via
-        costs.cost_per_side_pct() (which needs a price and a symbol).
-    symbol_of_column : maps each column name to its cost-table root symbol
-        (usually the identity mapping if columns are already root symbols).
+    settle_by_month : DataFrame indexed by month-end date, one column per
+        symbol, values = the front settlement at that month-end.
+    symbol_of_column : maps each column to its cost-table root symbol.
 
-    Returns a pd.Series of monthly rebalance cost (as a return drag, i.e. a
-    positive number to be SUBTRACTED from that month's gross return),
-    indexed like weights_by_month.
+    Returns a same-shaped DataFrame of cost per side as a fraction of
+    notional (costs.cost_per_side_pct) -- the cost of trading one unit of
+    weight in that symbol during the month that month-end governs. 0.0
+    where the settlement is missing (no price to convert with), as before.
     """
-    weights_prev = weights_by_month.shift(1).fillna(0.0)
-    delta = (weights_by_month - weights_prev).abs()
-
-    cost = pd.Series(0.0, index=weights_by_month.index)
-    for month in weights_by_month.index:
-        total = 0.0
-        for col in weights_by_month.columns:
-            d = delta.at[month, col]
-            if d == 0:
-                continue
+    out = pd.DataFrame(0.0, index=settle_by_month.index, columns=settle_by_month.columns)
+    for col in settle_by_month.columns:
+        symbol = symbol_of_column.get(col, col)
+        for month in settle_by_month.index:
             price = settle_by_month.at[month, col]
-            if pd.isna(price):
-                continue
-            symbol = symbol_of_column.get(col, col)
-            total += d * costs.cost_per_side_pct(symbol, price, cost_multiplier)
-        cost.at[month] = total
-    return cost
+            if pd.notna(price):
+                out.at[month, col] = costs.cost_per_side_pct(symbol, price, cost_multiplier)
+    return out

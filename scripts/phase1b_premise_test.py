@@ -1,13 +1,12 @@
 """
-Phase 1b premise-test runner. PREREGISTRATION.md Sec 7. Generates
-reports/PREMISE_REPORT.md -- runner-generated, immutable once committed
-(dated addenda only for any future correction, per the same convention as
-docs/DATA_QA_REPORT.md).
+Phase 1b premise-test runner. PREREGISTRATION.md Sec 7. Writes
+reports/PREMISE_REPORT.md and results/premise_summary.json (read by the
+primary runner for the Sec 7 gate).
 
-Hard Rule 2 (Phase 1b/1c governing prompt): no API calls -- the corpus is
-local and complete, loaded exclusively from DATA_DIR via src/pipeline.py.
-This is the FIRST script in this project's history permitted to compute a
-carry value, a return, a ranking, or a portfolio weight from real data.
+No API calls -- the corpus is local and read from config.DATA_DIR through
+src/study.py (shared with every runner). Run alone with
+`python scripts/phase1b_premise_test.py`, or as the first stage of
+`python scripts/run_all.py`.
 """
 import sys
 from datetime import datetime, timezone
@@ -15,181 +14,96 @@ from pathlib import Path
 
 import pandas as pd
 
-REPO = Path(r"C:\Users\Aaron\OneDrive\Desktop\Quant trade\commodity-carry-research")
+REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from src import config, pipeline, premise  # noqa: E402
+from src import config, pipeline, premise, study  # noqa: E402
 
-REPORT_PATH = REPO / "reports" / "PREMISE_REPORT.md"
+REPORT_PATH = config.REPORTS_DIR / "PREMISE_REPORT.md"
+RESULTS_PATH = config.RESULTS_DIR / "premise_summary.json"
 TRUNCATION_MONTHS = 6
-
-# The user-pre-authorized "NG single-day graze" (F11 amendment record;
-# the governing prompt's own wording: "the NG single-day graze is the one
-# known allowed artifact"). NG has TWO such instances, both already
-# individually characterized as non-permanent in docs/DATA_QA_REPORT.md's
-# F11 census (`_carry-research-workspace/stuck_episodes_classified.csv`) --
-# same mechanism, same signature (0 days past expiry, resolves the very
-# next trading day via a clean high-OI crossover). Both are the single
-# named "NG single-day graze" phenomenon, not two different exceptions.
-# Narrowly scoped to NG only -- ANY other symbol's firing (including HG's
-# three grazes documented under the PRE-A1 rule, which A1's own Gate 1
-# parity check already shows behaving differently and may not even recur
-# under the amended rule) is treated as unverified and halts hard pending
-# its own check, exactly like any firing that turns out to be permanent.
-KNOWN_ALLOWED_TRANSIENT_GRAZES = {
-    ("NG", "192047__2010-06-28"),
-    ("NG", "192053__2010-12-28"),
-}
-
-
-def _entry_dates():
-    entry = {s: pd.Timestamp(config.SAMPLE_START) for s in config.ALL_SYMBOLS}
-    entry["KE"] = pd.Timestamp(config.KE_ENTRY_DATE)
-    return entry
-
-
-def _tz_naive(ts):
-    return ts.tz_localize(None) if ts.tzinfo is not None else ts
-
-
-def _find_stuck_front_violations(front_series, expiry_by_key):
-    """Mirrors pipeline.assert_front_not_past_expiry()'s exact tz-safe
-    comparison, but collects every violation instead of raising on the
-    first -- gives the runner full visibility to apply the
-    known-allowed-transient-graze check itself, rather than parsing an
-    exception message. Does not change what counts as a violation."""
-    violations = []
-    for date, contract in front_series.items():
-        expiry = expiry_by_key.get(contract)
-        if expiry is None:
-            continue
-        if _tz_naive(pd.Timestamp(expiry)) < _tz_naive(pd.Timestamp(date)):
-            violations.append((date, contract))
-    return violations
-
-
-def _check_tripwire(symbol, front, expiry_by_key):
-    """Returns (ok_to_proceed: bool, skip_tripwire_for_carry: bool,
-    disclosure: str or None). ok_to_proceed=False means HALT the whole run.
-    skip_tripwire_for_carry=True is only ever returned alongside
-    ok_to_proceed=True, for the one verified, known-allowed graze."""
-    violations = _find_stuck_front_violations(front, expiry_by_key)
-    if not violations:
-        return True, False, None
-
-    last_contract = front.iloc[-1]
-    last_date = front.index.max()
-    last_expiry = expiry_by_key.get(last_contract)
-    permanent = last_expiry is not None and _tz_naive(pd.Timestamp(last_expiry)) < _tz_naive(pd.Timestamp(last_date))
-
-    is_known_graze = not permanent and all((symbol, c) in KNOWN_ALLOWED_TRANSIENT_GRAZES for _, c in violations)
-    if is_known_graze:
-        disclosure = (
-            f"{symbol}: known allowed transient graze(s), contract(s) "
-            f"{sorted({c for _, c in violations})!r}, held on "
-            f"{[str(d) for d, _ in violations]} -- non-permanent, resolves "
-            f"the next trading day (F11 amendment record). Not a new "
-            f"anomaly; continuing with skip_tripwire=True for this symbol's "
-            f"carry computation only."
-        )
-        return True, True, disclosure
-
-    detail = f"{symbol}: {violations[:5]}{'...' if len(violations) > 5 else ''} (permanent={permanent})"
-    return False, False, detail
 
 
 def main():
-    entry_dates = _entry_dates()
-
-    print("Loading definition lookup (real data, all 5,031 files)...", flush=True)
-    definition_lookup = pipeline.build_definition_lookup()
-    print(f"  {len(definition_lookup):,} rows", flush=True)
-
-    print("Loading settlement/OI panel (real data, all 5,026 files)...", flush=True)
-    settlement_oi_panel = pipeline.build_settlement_oi_panel()
-    print(f"  {len(settlement_oi_panel):,} rows", flush=True)
-
-    print("Building outright panel...", flush=True)
-    outright_panel = pipeline.build_outright_panel(definition_lookup, settlement_oi_panel)
-    print(f"  {len(outright_panel):,} outright rows", flush=True)
-
-    carry_by_symbol, daily_returns_by_symbol = {}, {}
-    n_filled_by_symbol, n_bars_by_symbol = {}, {}
-    all_guard_violations = []
-    known_graze_disclosures = []
-
-    for symbol in config.ALL_SYMBOLS:
-        print(f"Processing {symbol}...", flush=True)
-        seq = pipeline.symbol_listed_sequence(outright_panel, symbol)
-        if not seq:
-            print(f"  WARNING: no outright contracts found for {symbol}, skipping", flush=True)
-            continue
-        oi_wide = pipeline.symbol_oi_wide(outright_panel, symbol, seq)
-        settle_wide = pipeline.symbol_settle_wide(outright_panel, symbol, seq)
-        front = pipeline.symbol_front_series(oi_wide, seq)
-
-        # Permanent tripwire (Phase 1b Riders, post-F10): checked explicitly
-        # here, at the earliest point front_series exists -- a stuck front
-        # must be a loud, immediate failure, never silently discovered
-        # downstream. Collects every violation (not just the first) so the
-        # ONE user-pre-authorized transient graze (NG, non-permanent) can be
-        # recognized and disclosed rather than crashing the whole run; any
-        # OTHER violation, or this same one turning out permanent, still
-        # halts exactly as before.
-        expiry_by_key = (
-            outright_panel[outright_panel["asset"] == symbol]
-            .drop_duplicates(subset=["_contract_key"])
-            .set_index("_contract_key")["expiration"].to_dict()
-        )
-        ok, skip_tripwire, disclosure = _check_tripwire(symbol, front, expiry_by_key)
-        if not ok:
-            print(f"STUCK FRONT (unexpected) -- HALTING. {disclosure}", flush=True)
-            write_halt_report_stuck_front(symbol, disclosure)
-            sys.exit(1)
-        if skip_tripwire:
-            print(f"  {disclosure}", flush=True)
-            known_graze_disclosures.append(disclosure)
-
-        carry = pipeline.symbol_carry_series(outright_panel, front, seq, symbol, skip_tripwire=skip_tripwire)
-        ret_result = pipeline.symbol_daily_returns(settle_wide, front, symbol)
-
-        carry_by_symbol[symbol] = carry
-        daily_returns_by_symbol[symbol] = ret_result["returns"]
-        n_filled_by_symbol[symbol] = ret_result["n_filled"]
-        n_bars_by_symbol[symbol] = len(settle_wide)
-        for v in ret_result["guard_violations"]:
-            all_guard_violations.append((symbol,) + v)
-
-    if all_guard_violations:
-        print("ZERO-PRICE GUARD FIRED -- HALTING. This is a discovery, not an obstacle.", flush=True)
-        for v in all_guard_violations:
-            print(f"  {v}", flush=True)
-        write_halt_report_guard(all_guard_violations)
+    try:
+        ctx = study.load_context(log=lambda m: print(m, flush=True))
+    except study.StudyHalt as halt:
+        handle_halt(halt)
+        sys.exit(1)
+    if run(ctx) is None:
         sys.exit(1)
 
+
+def handle_halt(halt: "study.StudyHalt") -> None:
+    if halt.kind == "stuck_front":
+        print(f"STUCK FRONT (unexpected) -- HALTING. {halt.detail['detail']}", flush=True)
+        write_halt_report_stuck_front(halt.detail["symbol"], halt.detail["detail"])
+    else:
+        print("ZERO-PRICE GUARD FIRED -- HALTING. This is a discovery, not an obstacle.", flush=True)
+        for v in halt.detail:
+            print(f"  {v}", flush=True)
+        write_halt_report_guard(halt.detail)
+
+
+def run(ctx: "study.StudyContext"):
+    """Truncation check, both premise tests at the registered timing and
+    the execution-lag-1 sensitivity; writes the report and the JSON.
+    Returns the summary dict, or None if the truncation check halted."""
+    entry_dates = ctx.entry_dates
     print("Running real-data truncation-invariance check...", flush=True)
-    full_panel = pipeline.month_end_carry_panel(carry_by_symbol, entry_dates=entry_dates)
-    truncated_panel = pipeline.truncation_invariant_carry_panel(carry_by_symbol, TRUNCATION_MONTHS, entry_dates=entry_dates)
-    common_index = truncated_panel.index
+    full_panel = ctx.carry_panel
+    truncated_panel = pipeline.truncation_invariant_carry_panel(ctx.carry, TRUNCATION_MONTHS, entry_dates=entry_dates)
     try:
-        pd.testing.assert_frame_equal(full_panel.loc[common_index], truncated_panel, check_exact=True)
+        pd.testing.assert_frame_equal(full_panel.loc[truncated_panel.index], truncated_panel, check_exact=True)
         print("  PASSED -- bit-identical.", flush=True)
     except AssertionError as e:
         print(f"  FAILED: {e}", flush=True)
         write_halt_report_truncation(str(e))
-        sys.exit(1)
+        return None
 
     month_end_index = full_panel.index
-    return_panel = pipeline.month_end_next_month_return_panel(daily_returns_by_symbol, month_end_index, entry_dates=entry_dates)
+    returns = ctx.returns[1.0]
+    results = {}
+    for lag in (config.EXECUTION_LAG_PRIMARY, config.EXECUTION_LAG_SENSITIVITY):
+        return_panel = pipeline.month_end_next_month_return_panel(
+            returns, month_end_index, entry_dates=entry_dates, execution_lag=lag)
+        print(f"Running XS and TS premise tests (execution_lag={lag})...", flush=True)
+        results[lag] = (premise.xs_premise_test(full_panel, return_panel),
+                        premise.ts_premise_test(full_panel, return_panel))
+    xs_result, ts_result = results[config.EXECUTION_LAG_PRIMARY]
 
-    print("Running XS premise test...", flush=True)
-    xs_result = premise.xs_premise_test(full_panel, return_panel)
-    print("Running TS premise test...", flush=True)
-    ts_result = premise.ts_premise_test(full_panel, return_panel)
+    summary = {
+        "generated_utc": datetime.now(timezone.utc).isoformat(),
+        "code_version": study.code_version(),
+        "execution_lag": config.EXECUTION_LAG_PRIMARY,
+        "months": len(full_panel),
+        "month_end_first": str(full_panel.index.min().date()),
+        "month_end_last": str(full_panel.index.max().date()),
+        "trading_days_by_symbol": ctx.n_bars,
+        "statistics_diagnostics": ctx.statistics_diagnostics,
+        "xs": _xs_json(xs_result),
+        "ts": _ts_json(ts_result),
+        "sensitivity_execution_lag_1": {
+            "xs": _xs_json(results[config.EXECUTION_LAG_SENSITIVITY][0]),
+            "ts": _ts_json(results[config.EXECUTION_LAG_SENSITIVITY][1]),
+        },
+        "gate": {"H1": bool(xs_result["gate_passes"]), "H2": bool(ts_result["gate_passes"])},
+    }
+    study.write_json(RESULTS_PATH, summary)
+    write_report(full_panel, xs_result, ts_result, results[config.EXECUTION_LAG_SENSITIVITY], ctx.n_filled,
+                 ctx.n_bars, ctx.graze_disclosures, ctx.statistics_diagnostics, summary["code_version"])
+    print(f"Done. See {REPORT_PATH} and {RESULTS_PATH}", flush=True)
+    return summary
 
-    write_report(full_panel, return_panel, xs_result, ts_result, n_filled_by_symbol, n_bars_by_symbol,
-                 entry_dates, known_graze_disclosures)
-    print("Done. See reports/PREMISE_REPORT.md", flush=True)
+
+def _xs_json(r):
+    return {"mean_ic": r["mean_ic"], "tstat": r["tstat"], "pvalue": r["pvalue"], "n_months": r["n_months"],
+            "nw_lags": r["nw_lags"], "gate_passes": bool(r["gate_passes"])}
+
+
+def _ts_json(r):
+    return {"coefficient": r["coefficient"], "tstat": r["tstat"], "pvalue": r["pvalue"], "n_obs": r["n_obs"],
+            "gate_passes": bool(r["gate_passes"])}
 
 
 def write_halt_report_stuck_front(symbol, disclosure):
@@ -201,7 +115,7 @@ def write_halt_report_stuck_front(symbol, disclosure):
         "",
         "**The permanent tripwire (`pipeline.assert_front_not_past_expiry`) "
         "fired on a violation that does NOT match a user-pre-authorized "
-        f"transient graze** (known set: {sorted(KNOWN_ALLOWED_TRANSIENT_GRAZES)!r}). "
+        f"transient graze** (known set: {sorted(study.KNOWN_ALLOWED_TRANSIENT_GRAZES)!r}). "
         "This is either a genuinely new stuck-front instance, a different "
         "symbol's own already-documented-but-not-yet-authorized graze (e.g. "
         "HG's, characterized under the pre-A1 rule and not yet confirmed to "
@@ -265,9 +179,10 @@ def write_halt_report_truncation(error_text):
     REPORT_PATH.write_text("\n".join(lines), encoding="utf-8")
 
 
-def write_report(full_panel, return_panel, xs_result, ts_result, n_filled_by_symbol, n_bars_by_symbol,
-                  entry_dates, known_graze_disclosures=None):
+def write_report(full_panel, xs_result, ts_result, lag1_results, n_filled_by_symbol, n_bars_by_symbol,
+                  known_graze_disclosures=None, statistics_diagnostics=None, code_version="unknown"):
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    statistics_diagnostics = statistics_diagnostics or {}
 
     def gate_label(passes):
         return "**PROCEEDS to Phase 1c**" if passes else "**CLOSES at premise (no backtest)**"
@@ -278,20 +193,21 @@ def write_report(full_panel, return_panel, xs_result, ts_result, n_filled_by_sym
     lines = [
         "# Premise Report",
         "",
-        f"Generated (UTC): {datetime.now(timezone.utc).isoformat()}",
+        f"Generated (UTC): {datetime.now(timezone.utc).isoformat()} · code `{code_version}`",
         "",
-        "Runner-generated, immutable once committed (dated addenda only for "
-        "any future correction). PREREGISTRATION.md Sec 7. First real-data "
-        "carry/return computation in this project's history.",
+        ("Runner-generated (`scripts/phase1b_premise_test.py`). PREREGISTRATION.md "
+         "Sec 7. This run follows the 2026-09-27 corrections "
+         "(`reports/ADDENDUM_2026-09-27.md`: trade-date calendar, open-interest "
+         "field, execution timing); the report it replaces -- Run 4 -- is "
+         "preserved unchanged at commit f0847d7."),
         "",
         "## Run-history disclosure",
         "",
-        "Three prior pipeline runs were invalidated before this one, each by "
-        "an integrity anomaly caught before any premise number was trusted "
-        "-- never by a result direction. No directional memory of any "
-        "invalidated run's numbers -- premise, primary, or otherwise -- "
-        "informs anything below. This is the first valid premise "
-        "computation in this project's history.",
+        ("Runs 1-3 were invalidated, each by an integrity anomaly caught before "
+         "any premise number was trusted -- never by a result direction. Run 4 "
+         "(commit 543d271) was the first valid premise computation; it keyed "
+         "statistics on the delivery file's UTC date (Sunday rows) and read "
+         "CLEARED_VOLUME as open interest, and is superseded by this run."),
         "",
         "| Run | Trigger anomaly | Root cause | Fix |",
         "|---|---|---|---|",
@@ -320,6 +236,12 @@ def write_report(full_panel, return_panel, xs_result, ts_result, n_filled_by_sym
         "serial month | A1 (multi-candidate OI-max roll rule) + A2 "
         "(next-OI-bearing carry-next), adjudicated 2026-07-15 "
         "(`DEVIATIONS.md`) |",
+        ("| 4 | Published 2026-07-16; not invalidated by an anomaly in its own "
+         "output | Statistics keyed on the file's UTC date (Sunday re-sends "
+         "became trading days, ~313 rows/yr) and `stat_type` 6 "
+         "(CLEARED_VOLUME) used as open interest | Trade-date (`ts_ref`) "
+         "keying, session calendar, `StatType.OPEN_INTEREST` "
+         "(`reports/ADDENDUM_2026-09-27.md`) |"),
         "",
         "**F12 mechanism note, for the fill-count table below.** The t-1 "
         "look-ahead discipline (Sec 3, unchanged by A1/A2) means the roll "
@@ -351,6 +273,15 @@ def write_report(full_panel, return_panel, xs_result, ts_result, n_filled_by_sym
         "",
         "## Pipeline integrity checks",
         "",
+        ("- **Trade-date keying (2026-09-27):** every settlement/OI value keyed "
+         "on its `ts_ref` trade date; a symbol's calendar is the trade dates "
+         "with at least one published settlement or OI. Statistics diagnostics: "
+         f"{statistics_diagnostics.get('n_weekend_trade_date_dropped', 'n/a')} "
+         "weekend-dated records dropped, "
+         f"{statistics_diagnostics.get('n_undefined_ts_ref', 'n/a')} records "
+         "without a `ts_ref` dropped, "
+         f"{statistics_diagnostics.get('n_deleted', 'n/a')} DELETE records "
+         "applied. Open interest = `StatType.OPEN_INTEREST`."),
         "- **Roll rule and carry-next selection:** A1 (multi-candidate "
         "OI-max roll rule) and A2 (next-OI-bearing carry-next), per "
         "`DEVIATIONS.md` 2026-07-15 -- this run uses the amended pipeline "
@@ -397,6 +328,9 @@ def write_report(full_panel, return_panel, xs_result, ts_result, n_filled_by_sym
         f"- Month-end panel: {len(full_panel)} months, "
         f"{full_panel.index.min().date()} to {full_panel.index.max().date()}",
         f"- Symbols with data: {len(n_bars_by_symbol)} / {len(config.ALL_SYMBOLS)}",
+        ("- Timing: execution_lag = 0 (registered; month-end t's outcome window "
+         "starts with settle(t) -> settle(t+1), "
+         "`preregistration/AMENDMENT_2026-09-27.md`)."),
         "",
         "## XS premise (Sec 7)",
         "",
@@ -431,13 +365,28 @@ def write_report(full_panel, return_panel, xs_result, ts_result, n_filled_by_sym
         f"| H2 (TS) | {ts_result['coefficient']:.6f} | {gate_label(ts_result['gate_passes'])} |",
         "",
     ]
+    lag1_xs, lag1_ts = lag1_results
+    lines += [
+        "## Sensitivity: execution one trading day after the signal (non-gating)",
+        "",
+        ("Registered by `preregistration/AMENDMENT_2026-09-27.md`: the same tests "
+         "with each month's outcome window shifted one trading row (first "
+         "return settle(t+1) -> settle(t+2)). Reported beside the registered "
+         "result; the gate above is decided at execution_lag = 0 only."),
+        "",
+        "| Arm | Point estimate | t-statistic | p-value |",
+        "|---|---|---|---|",
+        f"| H1 (XS) mean IC | {lag1_xs['mean_ic']:.6f} | {lag1_xs['tstat']:.4f} | {lag1_xs['pvalue']:.4f} |",
+        f"| H2 (TS) coefficient | {lag1_ts['coefficient']:.6f} | {lag1_ts['tstat']:.4f} | {lag1_ts['pvalue']:.4f} |",
+        "",
+    ]
     if not xs_result["gate_passes"] and not ts_result["gate_passes"]:
         lines += [
             "**Both arms close at the premise stage.** Per Sec 7 and the "
             "governing prompt: *\"a premise-stage falsification is a "
             "complete, successful outcome of this study.\"* Phase 1c and "
-            "Sec 8's robustness suite do not run. This report is the final "
-            "quantitative output of Phase 1.",
+            "Sec 8's robustness suite do not run (`scripts/run_all.py` stops "
+            "here). This report is the final quantitative output of Phase 1.",
         ]
     else:
         surviving = []

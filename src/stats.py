@@ -2,17 +2,27 @@
 Statistical inference utilities. PREREGISTRATION.md Sec 6 (primary
 inference + promotion gate), Sec 7 (premise test), Sec 10 (N_trials).
 
+Provenance: written in this repository (commodity-carry-research); not
+vendored from another repo. BH-FDR default level q = 0.10
+(config.BH_FDR_Q). Sharpe CI method: Politis-Romano stationary bootstrap,
+geometric blocks with mean 21 trading days, circular wrap, 10,000
+replications, 95% percentile interval, seeds (7, 13, 31). The source of
+every function below is pinned by sha256 in
+tests/test_stats_provenance.py: any edit must update that pin in the same
+commit, with the reason in the commit message.
+
 - Stationary block bootstrap for the primary Sharpe CI (Sec 6): expected
   block length 21 trading days, 10,000 replications, 3 recorded seeds --
-  affirmed as the primary inference method (advisor ruling, 2026-07-10,
-  WORKSPACE/PREREG_OPEN_ITEMS.md item 1), not a fallback. Politis-Romano
-  (1994) construction: block lengths are themselves random, geometrically
-  distributed with mean = expected_block_length, and the resample wraps
-  circularly so the result is genuinely stationary (no edge effects from a
-  fixed tiling).
+  affirmed as the primary inference method (advisor ruling, 2026-07-10),
+  not a fallback. Block lengths are geometric with mean
+  expected_block_length and the resample wraps circularly, so the result
+  is stationary (no edge effects from a fixed tiling).
 - Deflated Sharpe Ratio (Bailey & Lopez de Prado, 2014), gated at >= 0.95
-  with N_trials = config.N_TRIALS (= 14, Sec 10's frozen computation
-  ledger) -- never a locally recomputed trial count.
+  with N_trials = config.N_TRIALS. The study passes the sample skewness
+  and excess kurtosis of the daily net returns and the empirical standard
+  deviation of the registered trial Sharpes (correction, 2026-09-27;
+  reports/ADDENDUM_2026-09-27.md). dsr_sharpe_threshold() gives the Sharpe
+  a series would need to clear the gate.
 - Benjamini-Hochberg FDR control at q = 0.10 (Sec 6), applied across the
   m=2 primary family {H1, H2}.
 - Newey-West HAC t-statistic and cluster-robust (by month) regression SEs
@@ -89,45 +99,58 @@ def stationary_bootstrap_multi_seed(daily_net_returns: np.ndarray,
     return [stationary_bootstrap_sharpe(daily_net_returns, seed=s, **kwargs) for s in seeds]
 
 
+def sample_moments(daily_returns) -> dict:
+    """Sample skewness and excess kurtosis (Fisher, 0 for a normal) of a
+    daily return series, NaNs dropped -- the non-normality inputs to
+    deflated_sharpe_ratio()."""
+    x = np.asarray(daily_returns, dtype=float)
+    x = x[~np.isnan(x)]
+    return {"skew": float(scipy_stats.skew(x)), "excess_kurtosis": float(scipy_stats.kurtosis(x, fisher=True))}
+
+
+def trial_sharpe_std(trial_sharpes) -> float:
+    """Empirical standard deviation (ddof=1) of the annualized Sharpes of
+    every registered trial series -- the cross-trial dispersion input to
+    deflated_sharpe_ratio()."""
+    x = np.asarray(list(trial_sharpes), dtype=float)
+    x = x[~np.isnan(x)]
+    if len(x) < 2:
+        raise ValueError("need at least 2 trial Sharpes to estimate their dispersion")
+    return float(x.std(ddof=1))
+
+
 def deflated_sharpe_ratio(observed_sharpe: float, n_trials: int, n_obs: int,
                            skew: float = 0.0, excess_kurtosis: float = 0.0,
                            periods_per_year: int = None,
                            sharpe_std_across_trials: float = None) -> float:
     """
-    Bailey & Lopez de Prado (2014), "The Deflated Sharpe Ratio". Deflates an
-    observed Sharpe for (a) the number of independent trials that could have
-    produced it (n_trials -- here always config.N_TRIALS=14, Sec 10) and
-    (b) the non-normality of returns (skew, excess kurtosis), then returns
-    the probability the TRUE Sharpe exceeds the expected maximum spurious
-    Sharpe under the null, as a one-sided p-value-like quantity in [0, 1].
-    Gate: DSR >= 0.95 (Sec 6).
+    Bailey & Lopez de Prado (2014), "The Deflated Sharpe Ratio": the
+    probability that the true Sharpe exceeds the expected maximum Sharpe of
+    n_trials unskilled trials, given the observed Sharpe's standard error
+    under the return distribution's skew and kurtosis. Gate: DSR >= 0.95
+    (Sec 6).
 
-    `observed_sharpe` is taken to be ANNUALIZED (matching every other
-    Sharpe in this codebase). The classic SE formula below is defined for
-    the PER-PERIOD Sharpe estimator, so observed_sharpe is converted down to
-    per-period terms to compute the standard error, then that SE is scaled
-    back up to annualized terms (SE_annual = SE_period * sqrt(periods_per_
-    year)) so it stays on the same scale as observed_sharpe and
-    expected_max_sharpe. Skipping this conversion silently mixes an
-    annualized Sharpe with a per-period SE, which inflates (SR - E[max])/SE
-    by ~sqrt(periods_per_year) and saturates the CDF at 1.0 regardless of
-    n_trials -- caught by test_dsr_decreases_as_n_trials_increases_holding_
-    sharpe_fixed during Phase 1a engine testing, not shipped silently.
+    `observed_sharpe` is ANNUALIZED (as every Sharpe in this codebase). The
+    standard error is defined for the per-period Sharpe SR_p:
+        SE_p = sqrt((1 - skew * SR_p + (excess_kurtosis + 2) / 4 * SR_p**2) / (n_obs - 1))
+    ((gamma4 - 1)/4 with gamma4 = excess_kurtosis + 3), then scaled back to
+    annual terms (x sqrt(periods_per_year)) so it is on the same scale as
+    observed_sharpe and the expected maximum (skipping the conversion
+    saturates the CDF regardless of n_trials).
 
-    sharpe_std_across_trials: if not supplied, approximated as the same
-    (annualized) standard error above -- a standard simplification when the
-    per-trial Sharpe variance across the N_trials population isn't itself
-    estimated (documented here rather than silently assumed).
+    sharpe_std_across_trials: the empirical dispersion of the trial Sharpes
+    (trial_sharpe_std()). If omitted it falls back to the observed Sharpe's
+    own SE -- the assumption behind the DSRs published before 2026-09-27,
+    which also passed skew = excess_kurtosis = 0.
     """
     periods_per_year = config.TRADING_DAYS_PER_YEAR if periods_per_year is None else periods_per_year
     euler_mascheroni = 0.5772156649015329
 
     sr_period = observed_sharpe / np.sqrt(periods_per_year)
-    se_period = np.sqrt((1 - skew * sr_period + (excess_kurtosis / 4.0) * sr_period ** 2) / (n_obs - 1))
-    se = se_period * np.sqrt(periods_per_year)
-
-    if se <= 0:
+    variance_term = 1 - skew * sr_period + ((excess_kurtosis + 2.0) / 4.0) * sr_period ** 2
+    if variance_term <= 0:
         return 0.0
+    se = np.sqrt(variance_term / (n_obs - 1)) * np.sqrt(periods_per_year)
 
     if sharpe_std_across_trials is None:
         sharpe_std_across_trials = se
@@ -142,6 +165,29 @@ def deflated_sharpe_ratio(observed_sharpe: float, n_trials: int, n_obs: int,
         )
 
     return float(scipy_stats.norm.cdf((observed_sharpe - expected_max_sharpe) / se))
+
+
+def dsr_sharpe_threshold(n_trials: int, n_obs: int, skew: float = 0.0, excess_kurtosis: float = 0.0,
+                          periods_per_year: int | None = None, sharpe_std_across_trials: float | None = None,
+                          gate: float | None = None) -> float:
+    """The smallest annualized Sharpe whose deflated_sharpe_ratio() reaches
+    `gate` (default config.DSR_GATE_MIN) under the same inputs -- what the
+    DSR gate actually demands at this sample size and trial count. NaN if
+    no Sharpe up to 20 reaches it."""
+    from itertools import pairwise
+
+    from scipy.optimize import brentq
+    gate = config.DSR_GATE_MIN if gate is None else gate
+
+    def gap(sr):
+        return deflated_sharpe_ratio(sr, n_trials, n_obs, skew, excess_kurtosis, periods_per_year,
+                                     sharpe_std_across_trials) - gate
+
+    grid = np.linspace(0.0, 20.0, 2001)
+    for lo, hi in pairwise(grid):
+        if gap(lo) < 0 <= gap(hi):
+            return float(brentq(gap, lo, hi, xtol=1e-10))
+    return float("nan")
 
 
 def benjamini_hochberg(p_values: list, q: float = None) -> list:

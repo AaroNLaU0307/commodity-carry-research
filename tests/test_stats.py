@@ -4,10 +4,15 @@ import numpy as np
 import pytest
 
 from src import config
+from scipy import stats as scipy_stats
+
 from src.stats import (
     stationary_bootstrap_sharpe,
     stationary_bootstrap_multi_seed,
     deflated_sharpe_ratio,
+    dsr_sharpe_threshold,
+    sample_moments,
+    trial_sharpe_std,
     benjamini_hochberg,
     newey_west_tstat,
     clustered_regression,
@@ -89,6 +94,58 @@ def test_dsr_decreases_as_n_trials_increases_holding_sharpe_fixed():
 def test_dsr_at_n_trials_14_is_between_zero_and_one():
     dsr = deflated_sharpe_ratio(observed_sharpe=1.0, n_trials=config.N_TRIALS, n_obs=1000)
     assert 0.0 <= dsr <= 1.0
+
+
+def test_dsr_reproduces_the_published_values_under_their_assumptions():
+    """reports/PRIMARY_REPORT.md: n=5,030, N_trials=14, skew = excess
+    kurtosis = 0, trial dispersion = the Sharpe's own SE -> H1 0.0399 at
+    Sharpe -0.0031, H2 0.0107 at Sharpe -0.1255 (the H2 value sits on a
+    rounding boundary of the 4-dp Sharpe, hence the tolerance)."""
+    assert round(deflated_sharpe_ratio(-0.0031, 14, 5030), 4) == 0.0399
+    assert deflated_sharpe_ratio(-0.1255, 14, 5030) == pytest.approx(0.0107, abs=1e-4)
+
+
+def test_dsr_gate_under_the_published_assumptions_demands_sharpe_about_0_76():
+    threshold = dsr_sharpe_threshold(n_trials=14, n_obs=5030)
+    assert round(threshold, 2) == 0.76
+    assert deflated_sharpe_ratio(threshold, 14, 5030) == pytest.approx(config.DSR_GATE_MIN, abs=1e-6)
+    assert threshold > config.SHARPE_GATE_MIN
+
+
+def test_dsr_standard_error_is_the_bailey_lopez_de_prado_formula():
+    """With one trial the DSR is Phi(SR / SE); for normal returns the
+    per-period SE is sqrt((1 + SR_p**2 / 2) / (n - 1)) -- (gamma4 - 1)/4
+    with gamma4 = 3 -- which matters once the per-period Sharpe is not tiny."""
+    sr, n, periods = 3.0, 60, 252
+    sr_p = sr / np.sqrt(periods)
+    se = np.sqrt((1 + sr_p ** 2 / 2) / (n - 1)) * np.sqrt(periods)
+    assert deflated_sharpe_ratio(sr, 1, n) == pytest.approx(scipy_stats.norm.cdf(sr / se), rel=1e-9)
+
+    skew, kurt = -1.0, 4.0
+    se_nn = np.sqrt((1 - skew * sr_p + (kurt + 2) / 4 * sr_p ** 2) / (n - 1)) * np.sqrt(periods)
+    assert deflated_sharpe_ratio(sr, 1, n, skew=skew, excess_kurtosis=kurt) == pytest.approx(
+        scipy_stats.norm.cdf(sr / se_nn), rel=1e-9)
+
+
+def test_dsr_uses_the_supplied_trial_dispersion():
+    base = deflated_sharpe_ratio(0.8, config.N_TRIALS, 1000)
+    tight = deflated_sharpe_ratio(0.8, config.N_TRIALS, 1000, sharpe_std_across_trials=0.05)
+    wide = deflated_sharpe_ratio(0.8, config.N_TRIALS, 1000, sharpe_std_across_trials=0.60)
+    assert tight > base > wide
+    assert dsr_sharpe_threshold(config.N_TRIALS, 1000, sharpe_std_across_trials=0.05) < dsr_sharpe_threshold(
+        config.N_TRIALS, 1000, sharpe_std_across_trials=0.60)
+
+
+def test_trial_sharpe_std_and_sample_moments():
+    assert trial_sharpe_std([0.1, -0.2, 0.3, np.nan]) == pytest.approx(np.std([0.1, -0.2, 0.3], ddof=1))
+    with pytest.raises(ValueError):
+        trial_sharpe_std([0.1])
+    rng = np.random.default_rng(8)
+    x = rng.standard_t(df=5, size=20_000)
+    m = sample_moments(np.append(x, np.nan))
+    assert m["skew"] == pytest.approx(scipy_stats.skew(x))
+    assert m["excess_kurtosis"] == pytest.approx(scipy_stats.kurtosis(x))
+    assert m["excess_kurtosis"] > 1.0  # t(5) is fat-tailed
 
 
 def test_bh_fdr_known_example():

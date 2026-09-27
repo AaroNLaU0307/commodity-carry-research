@@ -41,8 +41,11 @@ from pathlib import Path
 import databento as db
 from databento.common.error import BentoError
 
-WORKSPACE = Path(r"C:\Users\Aaron\OneDrive\Desktop\Quant trade\_carry-research-workspace")
-DATA_DIR = Path(r"C:\Users\Aaron\quant-data\commodity-carry")
+# Paths: repo-relative defaults, overridable by the DATA_DIR / WORKSPACE environment variables (src/config.py).
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+from src.config import DATA_DIR, WORKSPACE
+
 JOB_STATE_PATH = WORKSPACE / "phase1a_batch_jobs.json"
 BATCH_STAGING_DIR = WORKSPACE / "batch_staging"
 

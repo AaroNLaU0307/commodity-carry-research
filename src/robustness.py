@@ -2,9 +2,12 @@
 Phase 1c robustness suite constructions. PREREGISTRATION.md Sec 8 (items
 1-5, 7, 10; item 6 needs no new construction -- see below), plus the F7
 ex-PA/PL diagnostic (`DEVIATIONS.md`, 2026-07-11) and the fixed-calendar
-roll rule's day-count specification completion (`DEVIATIONS.md`, dated the
-day this module was written -- decided before this module was ever run,
-without reference to any robustness result).
+roll rule's day-count specification completion (`DEVIATIONS.md`,
+2026-07-16; that entry and this module first appear in git in the same
+commit as the robustness results). The specification choices behind items
+1, 4 and 5 were never logged in DEVIATIONS.md; they are recorded
+retroactively, after their results were known, in
+reports/ADDENDUM_2026-09-27.md.
 
 Kept separate from src/primary.py, src/pipeline.py, src/roll.py: these are
 ONE-OFF, non-gating diagnostic variants, not part of the core, heavily-
@@ -16,15 +19,14 @@ sign and magnitude, never gating promotion.
 
 Item 6 (2x cost table) needs no new construction at all: cost_multiplier is
 already threaded through costs.py -> pipeline.symbol_daily_returns() ->
-primary.compute_arm_daily_returns() -- see scripts/phase1c_primary_backtest.py,
-which already computed and reported it as part of gate 4. This module does
-not duplicate that.
+primary.compute_arm_daily_returns() -- src/study.py builds it once for gate 4
+and the robustness report. This module does not duplicate that.
 
 Items 8-9 (sub-period/per-year/jackknife) need no new construction either:
 they are diagnostics of the ALREADY-COMPUTED primary daily_net_returns
 series (slicing by date range, sector, or year), not a different signal or
-weighting -- see scripts/phase1c_robustness.py for that slicing logic
-directly; nothing to wire here.
+weighting -- see src/study.py and scripts/phase1c_robustness.py for that
+slicing logic; nothing to wire here.
 """
 import pandas as pd
 
@@ -48,7 +50,8 @@ def sector_neutral_xs_raw_signal(carry_snapshot: pd.Series, symbol_sector: dict)
     "Equal sector risk": each symbol's raw signal is then divided by the
     number of ACTIVE (nonzero-signal) symbols in its own sector, so every
     sector's total gross raw-signal magnitude sums to the same constant
-    (1.0 long + 1.0 short) regardless of how many names are actually in
+    (1.0 gross: 0.5 long + 0.5 short, the two legs being equal-sized)
+    regardless of how many names are actually in
     that sector or how many ended up in its own long/short legs -- a
     populous sector's active names get individually smaller raw signals,
     a sparse sector's active names get individually larger ones, so that
