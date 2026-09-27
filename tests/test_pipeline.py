@@ -229,8 +229,8 @@ def test_assert_front_not_past_expiry_handles_tz_aware_expiry_against_tz_naive_d
     """Real-data bug caught on this pipeline's first run against raw DBN
     files (not synthetic fixtures): Databento's `definition` schema returns
     tz-aware (UTC) timestamps for `expiration`, while front_series' own
-    dates are always tz-naive (derived from an 8-digit filename, never a
-    Databento data column) -- `pd.Timestamp(expiry) < pd.Timestamp(date)`
+    dates are always tz-naive (trade dates normalised to midnight by
+    build_settlement_oi_panel()) -- `pd.Timestamp(expiry) < pd.Timestamp(date)`
     raised `TypeError: Cannot compare tz-naive and tz-aware timestamps`.
     No prior fixture constructed a tz-aware Timestamp, so this was never
     exercised before real data surfaced it. Both directions checked: a

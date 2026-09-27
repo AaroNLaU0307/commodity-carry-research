@@ -5,13 +5,12 @@ rule), Sec 3 (roll rule, carry, returns), Sec 7 (premise-test panels).
 This module is the ONLY place that turns the raw per-day `definition` and
 `statistics` deliveries into the per-symbol front/carry/return series the
 rest of the engine (roll.py, carry.py, returns.py, premise.py) consumes.
-Two functions in this module (build_definition_lookup, build_settlement_oi_panel)
-require real DBN files in DATA_DIR and are exercised only manually, never in
-the automated suite -- same convention as data_loader.py's own DBN-reading
-functions (see that module's docstring). Every other function here takes
-already-loaded DataFrames and is synthetic-fixture-testable, and IS tested
-that way (tests/test_pipeline.py) before being run on real data, per the
-Phase 1b governing prompt's Hard Rule 4.
+The two DBN-reading functions (build_definition_lookup,
+build_settlement_oi_panel) read DATA_DIR; build_settlement_oi_panel is
+tested against small synthetic DBN files written by the test suite
+(tests/test_statistics_calendar.py), build_definition_lookup only on real
+data. Every other function here takes already-loaded DataFrames and is
+tested on synthetic fixtures (tests/test_pipeline.py).
 
 Identity-safety note (F6, F8 -- docs/DATA_QA_REPORT.md addenda): neither
 `instrument_id` nor `raw_symbol` alone is a stable key across this
@@ -24,13 +23,33 @@ construction, verified in the full-corpus registry this session -- see the
 consistency-sweep section of the QA addendum). No function here ever
 deduplicates or joins on `instrument_id` or `raw_symbol` alone across
 multiple dates.
+
+Calendar and field mapping (correction, 2026-09-27; reports/ADDENDUM_2026-09-27.md):
+every settlement/OI value is keyed on its CME trade date -- the `ts_ref` of
+the statistics record -- never on the UTC date in the delivery file's name.
+Databento splits the feed by UTC day, so the Sunday-evening session open
+re-sends Friday's settlement inside a Sunday-dated file; keying on the
+filename turned those re-sends into Sunday "trading days" (~313 rows/yr
+against the 252 used to annualise). The daily calendar is now the set of
+trade dates on which the symbol has at least one published settlement or
+OI value (build_outright_panel()), so weekend and holiday rows without a
+real session do not exist. Settlement and open interest are selected by
+the pinned `databento_dbn.StatType` enum (SETTLEMENT_PRICE,
+OPEN_INTEREST), never by a hard-coded integer: the value 6 used before this
+correction is CLEARED_VOLUME in that enum.
 """
 import re
 from pathlib import Path
 
 import pandas as pd
+from databento_dbn import UNDEF_STAT_QUANTITY, StatType, StatUpdateAction
 
 _FILENAME_DATE_RE = re.compile(r"(\d{8})")
+
+# Selected by enum, never by magic number (see module docstring).
+SETTLEMENT_STAT_TYPE = int(StatType.SETTLEMENT_PRICE)
+OPEN_INTEREST_STAT_TYPE = int(StatType.OPEN_INTEREST)
+_STAT_KEY = ["date", "instrument_id", "stat_type"]
 
 from . import carry as carry_mod
 from . import config
@@ -49,7 +68,12 @@ def build_definition_lookup(data_dir: Path = None) -> pd.DataFrame:
     concatenates the full ~64-column frame across all 5,000+ files first)
     -- the same per-file-then-concatenate approach already proven
     tractable for the full corpus this session (docs/DATA_QA_REPORT.md's
-    Phase 1a Completion addendum)."""
+    Phase 1a Completion addendum).
+
+    `date` here is the file's UTC date: a definition file lists every
+    instrument live that day. It is joined to the trade-date-keyed
+    statistics panel on the same calendar date in build_outright_panel(),
+    which then keeps only real session dates."""
     import databento as db
     data_dir = config.DATA_DIR if data_dir is None else data_dir
     schema_dir = Path(data_dir) / "definition"
@@ -68,16 +92,82 @@ def build_definition_lookup(data_dir: Path = None) -> pd.DataFrame:
     return out.drop_duplicates(subset=["date", "instrument_id"])
 
 
-def build_settlement_oi_panel(data_dir: Path = None) -> pd.DataFrame:
-    """Real data only, not unit-tested (see module docstring). Thin
-    (date, instrument_id, settlement, oi) table -- last value of the day
-    for stat_type=3 (settlement) and stat_type=6 (OI), empirically
-    identified in docs/DATA_QA_REPORT.md's Phase 1a Completion addendum
-    (settlement anchored to the 2020-04-20 CLK0 = -37.63 value; OI
-    identified by its pre-expiry decay shape).
+def thin_statistics_records(stats_df: pd.DataFrame) -> tuple:
+    """One statistics file's `DBNStore.to_df()` frame (ts_recv index) ->
+    (thin, n_undefined_ts_ref). `thin` keeps only SETTLEMENT_PRICE and
+    OPEN_INTEREST records, keyed on `date` = the CME trade date carried in
+    `ts_ref` (tz-naive midnight), with price, quantity, update_action and
+    ts_recv, reduced to the last-received record per (date, instrument_id,
+    stat_type) within the file. Records whose `ts_ref` is undefined (NaT)
+    cannot be placed on a trade date and are dropped; their count is
+    returned so the caller can report it rather than lose it silently."""
+    d = stats_df.reset_index()
+    if "ts_recv" not in d.columns:
+        d = d.rename(columns={d.columns[0]: "ts_recv"})
+    sub = d[d["stat_type"].isin([SETTLEMENT_STAT_TYPE, OPEN_INTEREST_STAT_TYPE])]
+    trade_date = pd.to_datetime(sub["ts_ref"], utc=True).dt.tz_convert(None).dt.normalize()
+    thin = pd.DataFrame({
+        "date": trade_date,
+        "instrument_id": sub["instrument_id"],
+        "stat_type": sub["stat_type"].astype(int),
+        "price": sub["price"],
+        "quantity": sub["quantity"],
+        "update_action": sub["update_action"],
+        "ts_recv": sub["ts_recv"],
+    })
+    n_undefined = int(thin["date"].isna().sum())
+    thin = thin[thin["date"].notna()]
+    thin = thin.sort_values("ts_recv", kind="stable").drop_duplicates(subset=_STAT_KEY, keep="last")
+    return thin.reset_index(drop=True), n_undefined
 
-    Same per-file-then-concatenate approach as build_definition_lookup()
-    and for the same reason."""
+
+def settlement_oi_from_statistics(thin: pd.DataFrame) -> pd.DataFrame:
+    """Combines thin_statistics_records() output from every file into the
+    (date, instrument_id, settlement, oi) panel.
+
+    - The value for a (trade date, instrument, stat type) is the LAST one
+      received across all files: a final settlement is published after the
+      preliminary one, and the Sunday-open re-send of Friday's settlement
+      (Sunday-dated file, `ts_ref` = Friday) lands on Friday, not Sunday.
+      `stat_flags` is not interpreted; last-received is used instead.
+    - A last record whose `update_action` is DELETE removes the value (NaN).
+    - Trade dates on a Saturday or Sunday are dropped (CME has no weekend
+      trade dates; a non-zero count means `ts_ref` is not what this module
+      assumes and is reported in `attrs["diagnostics"]`).
+    - OI with the undefined-quantity sentinel is NaN.
+    """
+    t = thin.sort_values("ts_recv", kind="stable").drop_duplicates(subset=_STAT_KEY, keep="last")
+    deleted = t["update_action"] == int(StatUpdateAction.DELETE)
+    weekend = t["date"].dt.dayofweek >= 5
+    diagnostics = {
+        "n_deleted": int(deleted.sum()),
+        "n_weekend_trade_date_dropped": int(weekend.sum()),
+    }
+    t = t[~weekend]
+    deleted = deleted[~weekend]
+
+    is_settle = t["stat_type"] == SETTLEMENT_STAT_TYPE
+    settle = t.loc[is_settle, ["date", "instrument_id"]].copy()
+    settle["settlement"] = t.loc[is_settle, "price"].where(~deleted[is_settle]).astype(float)
+
+    is_oi = t["stat_type"] == OPEN_INTEREST_STAT_TYPE
+    oi_qty = t.loc[is_oi, "quantity"]
+    oi = t.loc[is_oi, ["date", "instrument_id"]].copy()
+    oi["oi"] = oi_qty.where(~deleted[is_oi] & (oi_qty != UNDEF_STAT_QUANTITY)).astype(float)
+
+    panel = settle.merge(oi, on=["date", "instrument_id"], how="outer")
+    panel = panel.sort_values(["date", "instrument_id"]).reset_index(drop=True)
+    panel.attrs["diagnostics"] = diagnostics
+    return panel
+
+
+def build_settlement_oi_panel(data_dir: Path = None) -> pd.DataFrame:
+    """Reads every `statistics` per-day file (per-file-then-concatenate, as
+    build_definition_lookup()) and returns the trade-date-keyed
+    (date, instrument_id, settlement, oi) panel from
+    settlement_oi_from_statistics(). The delivery file's own UTC date is
+    never used as the key (module docstring). `attrs["diagnostics"]`
+    carries the dropped-record counts for the runner to print."""
     import databento as db
     data_dir = config.DATA_DIR if data_dir is None else data_dir
     schema_dir = Path(data_dir) / "statistics"
@@ -85,20 +175,15 @@ def build_settlement_oi_panel(data_dir: Path = None) -> pd.DataFrame:
     if not files:
         raise FileNotFoundError(f"No statistics files found at {schema_dir}")
 
-    frames = []
+    frames, n_undefined = [], 0
     for f in files:
-        file_date = pd.Timestamp(_FILENAME_DATE_RE.search(f.name).group(1))
-        d = db.DBNStore.from_file(f).to_df().reset_index()
-        date_col = d.columns[0]
-        sub = d[d["stat_type"].isin([3, 6])].sort_values(date_col)
-        last = sub.groupby(["instrument_id", "stat_type"], as_index=False).last()
-        last = last[["instrument_id", "stat_type", "price", "quantity"]].copy()
-        last["date"] = file_date
-        frames.append(last)
-    full = pd.concat(frames, ignore_index=True)
-    settle = full[full["stat_type"] == 3][["date", "instrument_id", "price"]].rename(columns={"price": "settlement"})
-    oi = full[full["stat_type"] == 6][["date", "instrument_id", "quantity"]].rename(columns={"quantity": "oi"})
-    return settle.merge(oi, on=["date", "instrument_id"], how="outer")
+        thin, n_undef = thin_statistics_records(db.DBNStore.from_file(f).to_df())
+        frames.append(thin)
+        n_undefined += n_undef
+    panel = settlement_oi_from_statistics(pd.concat(frames, ignore_index=True))
+    panel.attrs["diagnostics"] = {**panel.attrs["diagnostics"], "n_files": len(files),
+                                  "n_undefined_ts_ref": n_undefined}
+    return panel
 
 
 def build_outright_panel(definition_lookup: pd.DataFrame, settlement_oi_panel: pd.DataFrame) -> pd.DataFrame:
@@ -152,9 +237,22 @@ def build_outright_panel(definition_lookup: pd.DataFrame, settlement_oi_panel: p
     F6/F10 evidence) to differ in expiration by months to years, never by
     a same-day time-of-day correction, so a date-level match remains a
     safe disambiguator.
+
+    Session calendar (correction, 2026-09-27): a row survives only if its
+    `asset` has at least one outright with a settlement or OI value on
+    that trade date. Definition files exist for every non-Saturday UTC
+    day, so without this filter every Sunday and exchange holiday became a
+    zero-return "trading day". A contract missing its own settlement on a
+    real session keeps its NaN row (the Step 0 mark-to-last rule still
+    applies); a date with no published value for any of the asset's
+    outrights is not a session for that asset and is dropped, so the next
+    return spans the gap.
     """
     merged = definition_lookup.merge(settlement_oi_panel, on=["date", "instrument_id"], how="left")
     outright = merged[merged["instrument_class"] == "F"].copy()
+    has_value = outright["settlement"].notna() | outright["oi"].notna()
+    sessions = outright.loc[has_value, ["asset", "date"]].drop_duplicates()
+    outright = outright.merge(sessions, on=["asset", "date"], how="inner")
     expiration_date = pd.to_datetime(outright["expiration"]).dt.date.astype(str)
     outright["_contract_key"] = outright["instrument_id"].astype(str) + "__" + expiration_date
     return outright
@@ -236,9 +334,9 @@ def audit_contract_key_unification(definition_lookup: pd.DataFrame) -> dict:
 def _tz_naive(ts: pd.Timestamp) -> pd.Timestamp:
     """Databento's `definition` schema returns tz-aware (UTC) timestamps for
     `expiration` when loaded from raw DBN files; front_series' own dates are
-    always tz-naive (derived from an 8-digit filename via
-    build_definition_lookup()/build_settlement_oi_panel(), never from a
-    Databento data column). Comparing the two directly raises `TypeError:
+    always tz-naive (trade dates normalised to midnight by
+    build_settlement_oi_panel(), joined to build_definition_lookup()'s
+    file dates). Comparing the two directly raises `TypeError:
     Cannot compare tz-naive and tz-aware timestamps` -- surfaced on this
     pipeline's first run against raw (not synthetic-fixture) data, since no
     prior synthetic fixture constructed a tz-aware Timestamp. Strips tz
