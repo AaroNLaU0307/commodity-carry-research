@@ -22,8 +22,12 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", REPO_ROOT / "data" / "raw"))
 # Uncommitted intermediate files (pull logs, per-file checksum lists, the
 # F11 census CSV read by the optional Figure 4).
 WORKSPACE = Path(os.environ.get("WORKSPACE", REPO_ROOT / "data" / "workspace"))
+# reports/*.md and reports/figures/*.png are the published 2026-07-16 record:
+# immutable, corrected only by dated addenda. The corrected pipeline writes
+# its reports and figures to reports/rerun/ instead.
 REPORTS_DIR = REPO_ROOT / "reports"
-FIGURES_DIR = REPORTS_DIR / "figures"
+RERUN_REPORTS_DIR = REPORTS_DIR / "rerun"
+RERUN_FIGURES_DIR = RERUN_REPORTS_DIR / "figures"
 # Small, committed, machine-readable results written by the runners.
 RESULTS_DIR = REPO_ROOT / "results"
 

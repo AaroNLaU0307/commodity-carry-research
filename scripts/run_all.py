@@ -13,8 +13,9 @@ settlement spot-check that includes a Sunday-UTC-dated file. It writes
 nothing. RERUN_RUNBOOK.md says what to compare against.
 
 `all` loads the corpus once (src/study.py) and runs the four stages in
-order; each stage writes its report under reports/ and its machine-readable
-results under results/. Paths come from src/config.py (repo-relative
+order; each stage writes its report and figures under reports/rerun/ and its
+machine-readable results under results/. The published reports/*.md and
+reports/figures/*.png are never written. Paths come from src/config.py (repo-relative
 defaults; DATA_DIR and WORKSPACE environment variables).
 """
 import argparse

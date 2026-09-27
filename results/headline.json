@@ -35,6 +35,14 @@
           "artifact": "reports/PRIMARY_REPORT.md",
           "locator": "line 17: H1 '95% bootstrap CI' (seed 7)",
           "provenance": "predates fix; pending re-run"
+        },
+        {
+          "label": "registered variants reaching the 0.30 gate",
+          "display": "0/12",
+          "value": 0,
+          "artifact": "reports/ROBUSTNESS_REPORT.md",
+          "locator": "lines 13-24: the 12 registered-variant rows (Sec 8 items 1-7 and 10) of the 'Items 1-5, 7, 10: constructed variants' table, column Sharpe",
+          "provenance": "predates fix; pending re-run"
         }
       ],
       "caveats": [

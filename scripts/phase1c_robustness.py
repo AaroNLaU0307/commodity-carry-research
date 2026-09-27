@@ -3,7 +3,8 @@ Phase 1c robustness suite runner. PREREGISTRATION.md Sec 8 (all 10 items),
 the F7 ex-PA/PL diagnostic (`DEVIATIONS.md`, 2026-07-11), the Sec 8 item 7
 day-count specification (`DEVIATIONS.md`, 2026-07-16) and the
 execution-lag-1 sensitivity (`preregistration/AMENDMENT_2026-09-27.md`).
-Writes reports/ROBUSTNESS_REPORT.md and results/robustness_variants.csv.
+Writes reports/rerun/ROBUSTNESS_REPORT.md and results/robustness_variants.csv.
+The published reports/ROBUSTNESS_REPORT.md is immutable and never written.
 
 Every item is reported with sign and magnitude; none gates promotion (Sec 8).
 Items 8-9 are diagnostics of the already-computed primary series; the
@@ -25,7 +26,7 @@ sys.path.insert(0, str(REPO))
 
 from src import config, study  # noqa: E402
 
-REPORT_PATH = config.REPORTS_DIR / "ROBUSTNESS_REPORT.md"
+REPORT_PATH = config.RERUN_REPORTS_DIR / "ROBUSTNESS_REPORT.md"
 PRIMARY_RESULTS_PATH = config.RESULTS_DIR / "primary_summary.json"
 VARIANTS_PATH = config.RESULTS_DIR / "robustness_variants.csv"
 
@@ -113,10 +114,10 @@ def write_report(ctx, primary_summary, open_arms, series, diagnostics, sub_perio
         "Runner-generated (`scripts/phase1c_robustness.py`). PREREGISTRATION.md Sec 8, "
         "the F7 ex-PA/PL diagnostic and the execution-lag-1 sensitivity "
         "(`preregistration/AMENDMENT_2026-09-27.md`). This run follows the 2026-09-27 "
-        "corrections (`reports/ADDENDUM_2026-09-27.md`); the report it replaces is "
-        "preserved unchanged at commit f0847d7. **Every item below is reported with "
+        "corrections (`reports/ADDENDUM_2026-09-27.md`); the published pre-correction "
+        "report, `reports/ROBUSTNESS_REPORT.md`, stays unchanged. **Every item below is reported with "
         "sign and magnitude; none gates promotion.** The primary family's promotion "
-        f"verdict (`reports/PRIMARY_REPORT.md`: {verdicts}) is unaffected by anything "
+        f"verdict (`reports/rerun/PRIMARY_REPORT.md`: {verdicts}) is unaffected by anything "
         "in this report.",
         "",
         f"Primary Sharpe for reference: {'; '.join(reference) or 'no open arm'}.",
@@ -183,7 +184,7 @@ def write_report(ctx, primary_summary, open_arms, series, diagnostics, sub_perio
     for arm in open_arms:
         fh, sh = sub_period[arm]["first_half"], sub_period[arm]["second_half"]
         lines.append(f"| {arm} | {fh[0]} to {fh[1]} | {fh[2]:.4f} | {sh[0]} to {sh[1]} | {sh[2]:.4f} |")
-    lines += ["", "### Per-year Sharpe (annual returns are in `reports/PRIMARY_REPORT.md`)", ""]
+    lines += ["", "### Per-year Sharpe (annual returns are in `reports/rerun/PRIMARY_REPORT.md`)", ""]
     for arm in open_arms:
         net = series[arm]["result"]["daily_net_returns"].dropna()
         lines += [f"**{arm}:**", "", "| Year | Sharpe (that year's daily returns only) |", "|---|---|"]

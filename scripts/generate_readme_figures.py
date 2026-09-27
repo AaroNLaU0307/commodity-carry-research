@@ -1,5 +1,7 @@
 """
-README figure generator: the sole producer of reports/figures/*.png.
+README figure generator for the corrected pipeline: writes
+reports/rerun/figures/*.png. The committed reports/figures/*.png are the
+published 2026-07-16 figures and are never overwritten.
 
 Renders from the committed machine-readable results the runners write --
 results/primary_summary.json (H1/H2 net Sharpe and the three seeds' CIs),
@@ -30,7 +32,7 @@ from src import config  # noqa: E402
 PRIMARY_RESULTS_PATH = config.RESULTS_DIR / "primary_summary.json"
 VARIANTS_PATH = config.RESULTS_DIR / "robustness_variants.csv"
 MONTHLY_PATH = config.RESULTS_DIR / "primary_monthly_returns.csv"
-FIGURES_DIR = config.FIGURES_DIR
+FIGURES_DIR = config.RERUN_FIGURES_DIR
 
 # Okabe-Ito colorblind-safe palette: two hues only, plus neutral gray/dark-gray.
 H1_COLOR = "#0072B2"   # blue

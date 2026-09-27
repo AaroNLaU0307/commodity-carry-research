@@ -30,8 +30,8 @@ Row 1's per-year evidence, in full:
 *Annual net returns per arm, 2021–22 backwardation window shaded. 2022 is positive for both arms
 (H1 +5.69%, H2 +5.10%) but is not either arm's best year — H1's best years are 2010, 2017, and 2026, all
 larger than its 2022 print. Source: `reports/ROBUSTNESS_REPORT.md` §"(c) Per-year table annotated
-against the 2021-22 backwardation episode" · rendered before the 2026-09-27 corrections; re-rendered from
-`results/` by `scripts/generate_readme_figures.py` at the re-run.*
+against the 2021-22 backwardation episode" · rendered before the 2026-09-27 corrections; the corrected
+pipeline renders its own version to `reports/rerun/figures/`.*
 
 ## Cross-cutting: where did H1's P&L come from?
 

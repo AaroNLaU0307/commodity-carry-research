@@ -17,7 +17,7 @@ alongside.
 
 > 18 CME futures / 4 sectors · 2010-06-07 to 2026-06-30 · settlement-based signals · frozen conservative
 > cost table · stationary block bootstrap + DSR + BH-FDR · H1 net Sharpe **−0.003** (95% CI
-> **[−0.44, 0.43]**), H2 net Sharpe **−0.126** (95% CI **[−0.56, 0.32]**) · 166 passing tests, synthetic
+> **[−0.44, 0.43]**), H2 net Sharpe **−0.126** (95% CI **[−0.56, 0.32]**) · 168 passing tests, synthetic
 > fixtures only.
 
 ## TL;DR
@@ -40,7 +40,7 @@ alongside.
 
 ![Forest plot showing H1 and H2 net Sharpe ratios with 95% bootstrap confidence intervals, both crossing zero and neither approaching the 0.30 promotion gate; below them a strip of 26 point estimates — the 12 registered robustness variants and 14 diagnostic slices — clusters near zero with none reaching the gate.](reports/figures/gates_forest.png)
 
-*Figure 1 — H1/H2 net Sharpe (seed 7, the gate-deciding seed) with 95% bootstrap CIs, against the zero line and the 0.30 promotion gate. The gray strip holds 26 point estimates from `reports/ROBUSTNESS_REPORT.md`. Twelve are the registered variants: items 1–7 and 10, with item 6 the 2× cost table. Fourteen are diagnostic slices: F7 ex-PA/PL, sub-period halves and the drop-one-sector jackknife. The per-year and drop-one-year diagnostics are not plotted. This image was rendered before the 2026-09-27 corrections, and its title's "~30 registered variants" overstates the count. Source: `reports/PRIMARY_REPORT.md` §"Summary", `reports/ROBUSTNESS_REPORT.md`. The re-run re-renders it from `results/` with `scripts/generate_readme_figures.py`.*
+*Figure 1 — H1/H2 net Sharpe (seed 7, the gate-deciding seed) with 95% bootstrap CIs, against the zero line and the 0.30 promotion gate. The gray strip holds 26 point estimates from `reports/ROBUSTNESS_REPORT.md`. Twelve are the registered variants: items 1–7 and 10, with item 6 the 2× cost table. Fourteen are diagnostic slices: F7 ex-PA/PL, sub-period halves and the drop-one-sector jackknife. The per-year and drop-one-year diagnostics are not plotted. This image was rendered before the 2026-09-27 corrections, and its title's "~30 registered variants" overstates the count. Source: `reports/PRIMARY_REPORT.md` §"Summary", `reports/ROBUSTNESS_REPORT.md`. The corrected pipeline renders its own version to `reports/rerun/figures/`; this published image stays as it is.*
 
 - **Headline stats with CIs.** Both arms' 95% bootstrap confidence intervals span zero by a wide margin
   — H1 [−0.44, 0.43], H2 [−0.56, 0.32] (`reports/PRIMARY_REPORT.md`) — and both Deflated Sharpe Ratios
@@ -184,16 +184,15 @@ sample. Source: `docs/DATA_QA_REPORT.md` finding F11 (census artifact
 
 ## Related research
 
-Part of a falsification-first research series applying the same protocol across asset classes and
-strategy families:
+Part of a falsification-first research series across asset classes and strategy families:
 
-- [`multi-asset-tsmom-research`](https://github.com/AaroNLaU0307/multi-asset-tsmom-research) - time-series momentum across asset classes, **confirmed** (net Sharpe 0.75, 95% bootstrap CI [0.29, 1.23] excludes zero); XSMOM and four overlay studies falsified under the same gates.
-- [`quant-backtest-framework`](https://github.com/AaroNLaU0307/quant-backtest-framework) - multi-instrument SMC price-action study, **falsified** (0/210 cross-instrument BH-FDR across 5 instruments x 42 configs).
-- [`orderflow-research-engine`](https://github.com/AaroNLaU0307/orderflow-research-engine) - order-flow footprint signals on BTC/ETH perps, **falsified/null** (0/20 cells survive BH-FDR; 18-month OOS never opened).
+- [`multi-asset-tsmom-research`](https://github.com/AaroNLaU0307/multi-asset-tsmom-research) - time-series momentum across asset classes, **supported, not independently confirmed** (net Sharpe 0.75 at 2 bps, 95% bootstrap CI [0.29, 1.23] excludes zero); XSMOM falsified and four overlay studies not promoted.
+- [`quant-backtest-framework`](https://github.com/AaroNLaU0307/quant-backtest-framework) - multi-instrument SMC price-action study, **falsified** (0/210 cross-instrument BH-FDR across 5 instruments x 42 configs; these figures predate the fix of two look-ahead paths in its engine, re-run pending).
+- [`orderflow-research-engine`](https://github.com/AaroNLaU0307/orderflow-research-engine) - order-flow footprint signals on BTC/ETH perps, **null** (0/20 cells survive BH-FDR; H3 and H6 underpowered under the pre-registered event-count gate; no OOS return statistic computed or reported).
 - [`spot-mfi-btc-perp-research`](https://github.com/AaroNLaU0307/spot-mfi-btc-perp-research) - spot money-flow signals for BTC perps, base study **falsified** (0/42 BH-FDR); funding-divergence follow-up **inconclusive, leaning falsified**.
 
-The series' base rate is the point: confirmations are earned against the same gates that falsify
-everything else.
+The series' base rate is the point: most hypotheses fail, and the failures are reported as fully as the
+one supported result.
 
 ## Repository layout
 
@@ -214,9 +213,10 @@ everything else.
 - `scripts/` — the corpus pull and QA scripts, the Phase 1b/1c runners, and the single entry point
   `run_all.py` (`check-data`, then premise → primary → robustness → figures). The runners need the
   licensed corpus; `tests/test_run_all.py` drives them end to end on a synthetic corpus.
-- `reports/` — runner-generated (`PREMISE_REPORT.md`, `PRIMARY_REPORT.md`, `ROBUSTNESS_REPORT.md`,
-  `figures/`). Corrections are recorded in dated addenda (`ADDENDUM_2026-09-27.md`); a re-run
-  regenerates the reports, and the versions it replaces stay in git history.
+- `reports/` — runner-generated, immutable once committed (`PREMISE_REPORT.md`, `PRIMARY_REPORT.md`,
+  `ROBUSTNESS_REPORT.md`, `figures/`). Corrections happen via dated addenda
+  (`ADDENDUM_2026-09-27.md`), never silent edits. The corrected pipeline writes its reports and figures
+  to `reports/rerun/`.
 - `results/` — `headline.json`, the headline rows with the artifact and line behind each number; the
   runners write their machine-readable results here (`premise_summary.json`, `primary_summary.json`,
   `primary_monthly_returns.csv`, `robustness_variants.csv`), committed with the re-run.
@@ -236,9 +236,9 @@ Python 3.13 (the version CI runs; `requirements.txt` pins every dependency):
 ```
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-pytest                                                          # 166 tests, synthetic fixtures only
+pytest                                                          # 168 tests, synthetic fixtures only
 DATA_DIR=/path/to/commodity-carry python scripts/run_all.py check-data
-DATA_DIR=/path/to/commodity-carry python scripts/run_all.py     # premise -> primary -> robustness -> figures
+DATA_DIR=/path/to/commodity-carry python scripts/run_all.py     # writes reports/rerun/ and results/
 ```
 
 The two data commands need the licensed Databento corpus. [`RERUN_RUNBOOK.md`](RERUN_RUNBOOK.md) is the

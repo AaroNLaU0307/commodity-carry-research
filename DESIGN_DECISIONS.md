@@ -86,14 +86,15 @@ bootstrap was the pre-registered, advisor-affirmed primary inference method, §6
 informative: see the power statement in `README.md`'s Limitations section, computed directly from these
 two CIs, not asserted separately.
 
-## Why ship a negative result with the same rigor as `multi-asset-tsmom-research`'s confirmation?
+## Why ship a negative result with the same rigor as `multi-asset-tsmom-research`'s supported result?
 
-Because the gates don't know in advance which answer they're going to give. `multi-asset-tsmom-research`
-passed the same class of bootstrap-CI/DSR/BH-FDR gates this study failed; the falsification-first
-protocol that produced its `CONFIRMED` verdict is the identical protocol that produces this study's
-`NOT PROMOTED` one. A research program that only publishes when the answer is favorable isn't running a
-falsification test at all — it's running a publication filter. The value of the confirmed studies in
-this series depends entirely on the falsified ones being reported with the same completeness.
+Because the gates don't know in advance which answer they're going to give. `multi-asset-tsmom-research`'s
+core result is labelled *supported, not independently confirmed*: its bootstrap CI excludes zero, and that
+repository records that its core was not pre-registered. This study was pre-registered and gated from the
+start, and it reports `NOT PROMOTED` with the same completeness a favorable answer would have had. A
+research program that only publishes when the answer is favorable isn't running a falsification test at
+all — it's running a publication filter. A supported result elsewhere in this series is only as credible
+as the completeness with which the failed ones are reported.
 
 ## Why does F12 (the one-day tax) get its own note instead of being quietly absorbed?
 

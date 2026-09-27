@@ -70,7 +70,7 @@ Keep the printed output and the CME figures you compared. Both go into the adden
 DATA_DIR=/path/to/commodity-carry python scripts/run_all.py
 ```
 
-This loads the corpus once and then runs premise → primary → robustness → figures. The first lines print the statistics diagnostics:
+This loads the corpus once and then runs premise → primary → robustness → figures. Reports and figures go to `reports/rerun/`; machine-readable results go to `results/`. The published `reports/*.md` and `reports/figures/*.png` are immutable and are never written. The first lines print the statistics diagnostics:
 
 - `n_weekend_trade_date_dropped` must be 0. Anything else means `ts_ref` is not the trade date this pipeline assumes, so stop.
 - `n_undefined_ts_ref` and `n_deleted` are reported for the record.
@@ -98,7 +98,7 @@ Line numbers refer to this commit.
 **premise**
 
 - Writes:
-  - `reports/PREMISE_REPORT.md`
+  - `reports/rerun/PREMISE_REPORT.md`
   - `results/premise_summary.json` (`xs`, `ts`, `sensitivity_execution_lag_1`, `gate`)
 - Feeds:
   - `README.md` verdicts table, "Premise (point est.)" column (lines 36–37)
@@ -109,7 +109,7 @@ Line numbers refer to this commit.
 **primary**
 
 - Writes:
-  - `reports/PRIMARY_REPORT.md`
+  - `reports/rerun/PRIMARY_REPORT.md`
   - `results/primary_summary.json` (per arm: net Sharpe, CI by seed, p-value, 2× cost Sharpe, gross Sharpe, lag-1 Sharpe, DSR with its inputs and threshold, gates, annual returns, cost drags; plus N_trials and the trial Sharpes)
   - `results/primary_monthly_returns.csv`
 - Feeds, in `README.md`:
@@ -126,7 +126,7 @@ Line numbers refer to this commit.
 **robustness**
 
 - Writes:
-  - `reports/ROBUSTNESS_REPORT.md`
+  - `reports/rerun/ROBUSTNESS_REPORT.md`
   - `results/robustness_variants.csv` (every registered series, including the lag-1 pair, and every diagnostic slice, with `kind` and `in_n_trials`)
 - Feeds, in `README.md`:
   - Verdict paragraph, "none of the 12 registered variants reaches 0.30" (lines 8–10; now 14 registered with the lag-1 pair)
@@ -141,11 +141,11 @@ Line numbers refer to this commit.
 **figures**
 
 - Writes:
-  - `reports/figures/gates_forest.png`
-  - `reports/figures/equity_curves.png`
-  - `reports/figures/per_year_returns.png`
-  - `reports/figures/f11_deadlock.png`, only when the census CSV is in `WORKSPACE`
-- Feeds: `README.md` Figures 1–3, their alt text and captions (lines 41–43, 66–74, 89–93), and the `docs/MECHANISM_NOTES.md` row-1 figure.
+  - `reports/rerun/figures/gates_forest.png`
+  - `reports/rerun/figures/equity_curves.png`
+  - `reports/rerun/figures/per_year_returns.png`
+  - `reports/rerun/figures/f11_deadlock.png`, only when the census CSV is in `WORKSPACE`
+- Feeds: `README.md` Figures 1–3, their alt text and captions (lines 41–43, 66–74, 90–94), and the `docs/MECHANISM_NOTES.md` row-1 figure.
 
 Several prose claims depend on the numbers and must be re-read against the new results, not carried over:
 
@@ -163,21 +163,22 @@ Several prose claims depend on the numbers and must be re-read against the new r
    - the code commit stamped in the report headers (not `-dirty`);
    - the step-2 outputs and the CME figures they were compared against;
    - the statistics diagnostics;
-   - for each headline number, the old value, the new value and the new artifact path;
+   - for each headline number, published value → corrected value, with both artifact paths (`reports/<name>.md` → `reports/rerun/<name>.md` or `results/…`);
    - the premise gates, the promotion verdicts, the lag-1 sensitivity and the DSR threshold;
    - any halt and its diagnosis.
 
    Do not edit the earlier sections.
-2. **README.** Update every number listed in step 4. Replace the dated notice at lines 12–16 with one saying the numbers are from the re-run of that date, linking addendum §10. Update the Figure 1 caption (lines 41–43) and the test count if it changed.
+2. **README.** Update every number listed in step 4, and re-point its citations from `reports/<name>.md` to `reports/rerun/<name>.md`. Re-point Figures 1–3 (lines 41, 66, 90) from `reports/figures/*.png` to `reports/rerun/figures/*.png`, and rewrite their captions (lines 43, 68–74, 92–94), which currently say the images predate the corrections. Figure 4 (`reports/figures/f11_deadlock.png`, the pre-amendment census) stays unless a new one is rendered. Do the same in `docs/MECHANISM_NOTES.md` (row-1 figure, line 28). Replace the dated notice at lines 12–16 with one saying the numbers are from the re-run of that date, linking addendum §10, and update the test count if it changed.
 3. **`results/headline.json`.**
-   - Point each stat at `results/primary_summary.json` or `results/premise_summary.json`, with a `json: …` locator such as `json: arms.H1.net_sharpe`, `json: arms.H1.ci_by_seed.0.ci_low` or `json: ts.tstat`. `tests/test_headline.py` recomputes JSON-backed stats.
+   - Point each stat at `results/primary_summary.json`, `results/premise_summary.json` or a `reports/rerun/` report, with a `json: …` locator such as `json: arms.H1.net_sharpe`, `json: arms.H1.ci_by_seed.0.ci_low` or `json: ts.tstat`. `tests/test_headline.py` recomputes JSON-backed stats.
    - Set `provenance` to `reproduced` only for values recomputed from those committed files in that session.
+   - The `xs-carry` stat "registered variants reaching the 0.30 gate" (now 0/12, recounted by `tests/test_headline.py` from the published table) becomes a count over the `kind == registered` rows of `results/robustness_variants.csv`, 14 with the lag-1 pair. Point the stat there and extend the test's count check to read that CSV.
    - Set `source_commit` to the commit that contains the regenerated artifacts: commit them first, then fill in the sha. Re-check `verdict`, `mechanism` and `caveats`.
 4. **Commit** these, with `pytest -q` green:
-   - `reports/*.md` and `reports/figures/*.png`
+   - `reports/rerun/*.md` and `reports/rerun/figures/*.png`
    - `results/*.json` and `results/*.csv`
    - `README.md`, `docs/MECHANISM_NOTES.md` and `DESIGN_DECISIONS.md` where their numbers changed
    - the addendum
 
-   Never commit anything from `DATA_DIR` or `WORKSPACE`. The replaced reports stay in history at `f0847d7`.
-5. **Do not touch** `preregistration/PREREGISTRATION.md` or the existing `DEVIATIONS.md` entries. Any new specification decision gets a dated record written before the computation it governs.
+   Never commit anything from `DATA_DIR` or `WORKSPACE`.
+5. **Do not touch** the published `reports/PREMISE_REPORT.md`, `reports/PRIMARY_REPORT.md`, `reports/ROBUSTNESS_REPORT.md` or `reports/figures/*.png`: they stay as the pre-correction record, and the addendum section is where published and corrected values sit side by side. Do not touch `preregistration/PREREGISTRATION.md` or the existing `DEVIATIONS.md` entries either. Any new specification decision gets a dated record written before the computation it governs.

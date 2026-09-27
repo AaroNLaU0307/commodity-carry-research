@@ -110,10 +110,13 @@ def test_run_all_end_to_end_on_a_synthetic_corpus(isolated_run):
     assert h1 == pytest.approx(primary["arms"]["H1"]["net_sharpe"])
 
     for name in ("PREMISE_REPORT.md", "PRIMARY_REPORT.md", "ROBUSTNESS_REPORT.md"):
-        text = (tmp / "reports" / name).read_text()
+        text = (tmp / "reports" / "rerun" / name).read_text()
         assert "HALTED" not in text and "2026-09-27" in text
     for name in ("gates_forest.png", "equity_curves.png", "per_year_returns.png"):
-        assert (tmp / "reports" / "figures" / name).stat().st_size > 10_000
+        assert (tmp / "reports" / "rerun" / "figures" / name).stat().st_size > 10_000
+    # the published reports/*.md and reports/figures/*.png are never written
+    assert not list((tmp / "reports").glob("*.md"))
+    assert not (tmp / "reports" / "figures").exists()
 
 
 @pytest.mark.filterwarnings("ignore::DeprecationWarning")
@@ -128,7 +131,21 @@ def test_primary_stage_skips_an_arm_closed_at_the_premise(isolated_run):
     primary = json.loads((tmp / "results" / "primary_summary.json").read_text())
     assert primary["arms"]["H2"] == {"status": "closed at premise (Sec 7)"}
     assert not any(k.endswith("H2") for k in primary["trial_sharpes"])
-    assert "CLOSED AT PREMISE" in (tmp / "reports" / "PRIMARY_REPORT.md").read_text()
+    assert "CLOSED AT PREMISE" in (tmp / "reports" / "rerun" / "PRIMARY_REPORT.md").read_text()
+
+
+def test_no_stage_writes_the_published_reports(monkeypatch):
+    """reports/*.md and reports/figures/*.png are the immutable published
+    record; every stage of the corrected pipeline writes under reports/rerun/."""
+    monkeypatch.syspath_prepend(str(SCRIPTS))
+    published = REPO / "reports"
+    rerun = published / "rerun"
+    assert config.RERUN_REPORTS_DIR == rerun and config.RERUN_FIGURES_DIR == rerun / "figures"
+    for name in ("phase1b_premise_test", "phase1c_primary_backtest", "phase1c_robustness"):
+        assert importlib.import_module(name).REPORT_PATH.parent == rerun
+    assert importlib.import_module("generate_readme_figures").FIGURES_DIR == rerun / "figures"
+    for name in ("phase1b_premise_test", "phase1c_primary_backtest", "phase1c_robustness", "generate_readme_figures"):
+        sys.modules.pop(name, None)
 
 
 def test_manifest_parsing_and_aggregate_checksum(tmp_path, monkeypatch):

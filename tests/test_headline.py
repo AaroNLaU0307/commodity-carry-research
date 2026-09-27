@@ -1,13 +1,18 @@
 """results/headline.json: the machine-readable headline rows other pages
 render from. Checks the schema, that every cited artifact exists, and that
-every stat's value is printed on the cited line of its (markdown) artifact
-and rounds to the displayed string. Runs without licensed data."""
+every stat's value is what its artifact holds -- printed on the cited line
+of a markdown report ("line N: ..."), at the cited key path of a results
+JSON ("json: arms.H1.net_sharpe"), or, for a count shown as "k/n", recounted
+from the cited table rows ("lines A-B: ...") -- and matches the displayed
+string. Runs without licensed data."""
 import json
 import re
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 import pytest
+
+from src import config
 
 REPO = Path(__file__).resolve().parents[1]
 HEADLINE = json.loads((REPO / "results" / "headline.json").read_text(encoding="utf-8"))
@@ -39,6 +44,9 @@ def test_schema_keys_and_values():
 def test_stat_is_printed_on_the_cited_line_and_matches_its_display(row_id, stat):
     path = REPO / stat["artifact"]
     assert path.is_file()
+    if re.fullmatch(r"\d+/\d+", stat["display"]):
+        _check_variant_count(path, stat)
+        return
     display = stat["display"].replace(MINUS, "-")
     places = Decimal(display).as_tuple().exponent
     if path.suffix == ".json":
@@ -54,3 +62,21 @@ def test_stat_is_printed_on_the_cited_line_and_matches_its_display(row_id, stat)
         value = Decimal(f"{stat['value']:.4f}")  # the reported 4-dp decimal
     # display = that decimal rounded half away from zero to the displayed places
     assert value.quantize(Decimal(1).scaleb(places), rounding=ROUND_HALF_UP) == Decimal(display)
+
+
+REGISTERED_ROW = re.compile(r"^\| (\d+) \| [^|]+ \| (XS|TS) \| (-?\d+\.\d{4}) \|$")
+
+
+def _check_variant_count(path, stat):
+    """"k/n registered variants reaching the gate": the cited lines must be
+    exactly the 12 registered variant rows of Sec 8 (items 1-7 and 10, per
+    PREREGISTRATION.md Sec 10), and k must be how many have Sharpe >= the
+    0.30 gate."""
+    first, last = map(int, re.match(r"lines (\d+)-(\d+)", stat["locator"]).groups())
+    rows = [REGISTERED_ROW.match(line) for line in path.read_text(encoding="utf-8").splitlines()[first - 1:last]]
+    assert all(rows), "every cited line must be a registered-variant table row"
+    assert len(rows) == 12
+    assert sorted({int(r.group(1)) for r in rows}) == [1, 2, 3, 4, 5, 6, 7, 10]
+    reaching = sum(float(r.group(3)) >= config.SHARPE_GATE_MIN for r in rows)
+    assert stat["value"] == reaching
+    assert stat["display"] == f"{reaching}/{len(rows)}"

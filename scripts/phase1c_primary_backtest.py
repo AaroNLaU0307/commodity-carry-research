@@ -2,8 +2,9 @@
 Phase 1c primary-family backtest runner. PREREGISTRATION.md Sec 4 (H1/H2
 construction), Sec 5 (cost model), Sec 6 (inference + promotion gates),
 Sec 10 (N_trials), as amended by preregistration/AMENDMENT_2026-09-27.md.
-Writes reports/PRIMARY_REPORT.md, results/primary_summary.json and
-results/primary_monthly_returns.csv.
+Writes reports/rerun/PRIMARY_REPORT.md, results/primary_summary.json and
+results/primary_monthly_returns.csv. The published reports/PRIMARY_REPORT.md
+is immutable and never written.
 
 Needs results/premise_summary.json from the premise stage: an arm whose
 premise point estimate is <= 0 closes there (Sec 7) and is not backtested.
@@ -23,7 +24,7 @@ sys.path.insert(0, str(REPO))
 
 from src import config, stats, study  # noqa: E402
 
-REPORT_PATH = config.REPORTS_DIR / "PRIMARY_REPORT.md"
+REPORT_PATH = config.RERUN_REPORTS_DIR / "PRIMARY_REPORT.md"
 PREMISE_RESULTS_PATH = config.RESULTS_DIR / "premise_summary.json"
 RESULTS_PATH = config.RESULTS_DIR / "primary_summary.json"
 MONTHLY_PATH = config.RESULTS_DIR / "primary_monthly_returns.csv"
@@ -202,7 +203,7 @@ def write_report(ctx, premise, open_arms, closed_arms, gate_data, trial_sharpes,
         ("Runner-generated (`scripts/phase1c_primary_backtest.py`). PREREGISTRATION.md "
          "Sec 4/Sec 6, as amended by `preregistration/AMENDMENT_2026-09-27.md`. This "
          "run follows the 2026-09-27 corrections (`reports/ADDENDUM_2026-09-27.md`); "
-         "the report it replaces is preserved unchanged at commit f0847d7."),
+         "the published pre-correction report, `reports/PRIMARY_REPORT.md`, stays unchanged."),
         "",
         (f"**Premise gate (Sec 7, `results/premise_summary.json`):** XS mean IC "
          f"{xs['mean_ic']:+.6f} (NW({xs['nw_lags']}) t={xs['tstat']:.4f}), TS coefficient "

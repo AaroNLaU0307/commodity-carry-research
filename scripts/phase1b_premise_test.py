@@ -1,7 +1,8 @@
 """
 Phase 1b premise-test runner. PREREGISTRATION.md Sec 7. Writes
-reports/PREMISE_REPORT.md and results/premise_summary.json (read by the
-primary runner for the Sec 7 gate).
+reports/rerun/PREMISE_REPORT.md and results/premise_summary.json (read by
+the primary runner for the Sec 7 gate). The published
+reports/PREMISE_REPORT.md is immutable and never written.
 
 No API calls -- the corpus is local and read from config.DATA_DIR through
 src/study.py (shared with every runner). Run alone with
@@ -19,7 +20,7 @@ sys.path.insert(0, str(REPO))
 
 from src import config, pipeline, premise, study  # noqa: E402
 
-REPORT_PATH = config.REPORTS_DIR / "PREMISE_REPORT.md"
+REPORT_PATH = config.RERUN_REPORTS_DIR / "PREMISE_REPORT.md"
 RESULTS_PATH = config.RESULTS_DIR / "premise_summary.json"
 TRUNCATION_MONTHS = 6
 
@@ -198,8 +199,8 @@ def write_report(full_panel, xs_result, ts_result, lag1_results, n_filled_by_sym
         ("Runner-generated (`scripts/phase1b_premise_test.py`). PREREGISTRATION.md "
          "Sec 7. This run follows the 2026-09-27 corrections "
          "(`reports/ADDENDUM_2026-09-27.md`: trade-date calendar, open-interest "
-         "field, execution timing); the report it replaces -- Run 4 -- is "
-         "preserved unchanged at commit f0847d7."),
+         "field, execution timing). Run 4's published report, "
+         "`reports/PREMISE_REPORT.md`, stays unchanged as the pre-correction record."),
         "",
         "## Run-history disclosure",
         "",
