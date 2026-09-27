@@ -92,15 +92,48 @@ def build_definition_lookup(data_dir: Path = None) -> pd.DataFrame:
     return out.drop_duplicates(subset=["date", "instrument_id"])
 
 
-def thin_statistics_records(stats_df: pd.DataFrame) -> tuple:
+def drop_late_records(records: pd.DataFrame, latest: dict) -> tuple:
+    """Late-record rule (DATA_FIX, delegate decision of 2026-09-27T18:15:08Z,
+    reports/ADDENDUM_2026-09-27.md §10): per (instrument_id, stat_type), in
+    ts_recv order, a record for trade date d is ignored if a record for the
+    same instrument and stat type with a later trade date had already been
+    received. Such a record cannot be the CME value for d: the feed has been
+    seen to re-send a later trade date's settlement under an earlier ts_ref
+    (CLK0: Monday 2020-04-20's -37.63 received with ts_ref Friday 2020-04-17).
+    `stat_flags` is not read.
+
+    `records` holds one file's thin records (date, instrument_id, stat_type,
+    ts_recv, ...); `latest` maps (instrument_id, stat_type) -> the latest
+    trade date received in earlier files, and is updated in place, so files
+    must be passed in delivery (ts_recv) order. Returns (kept, n_dropped),
+    n_dropped a {stat_type: count} dict."""
+    keys = ["instrument_id", "stat_type"]
+    r = records.sort_values("ts_recv", kind="stable")
+    prior_in_file = r.groupby(keys, sort=False)["date"].cummax().groupby(
+        [r["instrument_id"], r["stat_type"]], sort=False).shift(1)
+    carried = pd.Series([latest.get(k, pd.NaT) for k in zip(r["instrument_id"], r["stat_type"])],
+                        index=r.index, dtype="datetime64[ns]")
+    prior = pd.concat([prior_in_file, carried], axis=1).max(axis=1)
+    late = r["date"] < prior
+    for k, d in r.groupby(keys, sort=False)["date"].max().items():
+        if k not in latest or d > latest[k]:
+            latest[k] = d
+    n_dropped = {int(st): int(n) for st, n in r.loc[late, "stat_type"].value_counts().items()}
+    return r[~late], n_dropped
+
+
+def thin_statistics_records(stats_df: pd.DataFrame, latest: dict | None = None) -> tuple:
     """One statistics file's `DBNStore.to_df()` frame (ts_recv index) ->
-    (thin, n_undefined_ts_ref). `thin` keeps only SETTLEMENT_PRICE and
-    OPEN_INTEREST records, keyed on `date` = the CME trade date carried in
-    `ts_ref` (tz-naive midnight), with price, quantity, update_action and
-    ts_recv, reduced to the last-received record per (date, instrument_id,
-    stat_type) within the file. Records whose `ts_ref` is undefined (NaT)
-    cannot be placed on a trade date and are dropped; their count is
-    returned so the caller can report it rather than lose it silently."""
+    (thin, n_undefined_ts_ref, n_late_dropped). `thin` keeps only
+    SETTLEMENT_PRICE and OPEN_INTEREST records, keyed on `date` = the CME
+    trade date carried in `ts_ref` (tz-naive midnight), with price, quantity,
+    update_action and ts_recv, reduced to the last-received record per
+    (date, instrument_id, stat_type) within the file. Records whose `ts_ref`
+    is undefined (NaT) cannot be placed on a trade date and are dropped;
+    their count is returned so the caller can report it rather than lose it
+    silently. With `latest` (see drop_late_records()), late records are
+    removed record by record *before* the within-file reduction, so a late
+    record can never displace an earlier valid one."""
     d = stats_df.reset_index()
     if "ts_recv" not in d.columns:
         d = d.rename(columns={d.columns[0]: "ts_recv"})
@@ -117,8 +150,11 @@ def thin_statistics_records(stats_df: pd.DataFrame) -> tuple:
     })
     n_undefined = int(thin["date"].isna().sum())
     thin = thin[thin["date"].notna()]
+    n_late = {}
+    if latest is not None:
+        thin, n_late = drop_late_records(thin, latest)
     thin = thin.sort_values("ts_recv", kind="stable").drop_duplicates(subset=_STAT_KEY, keep="last")
-    return thin.reset_index(drop=True), n_undefined
+    return thin.reset_index(drop=True), n_undefined, n_late
 
 
 def settlement_oi_from_statistics(thin: pd.DataFrame) -> pd.DataFrame:
@@ -126,10 +162,12 @@ def settlement_oi_from_statistics(thin: pd.DataFrame) -> pd.DataFrame:
     (date, instrument_id, settlement, oi) panel.
 
     - The value for a (trade date, instrument, stat type) is the LAST one
-      received across all files: a final settlement is published after the
-      preliminary one, and the Sunday-open re-send of Friday's settlement
-      (Sunday-dated file, `ts_ref` = Friday) lands on Friday, not Sunday.
-      `stat_flags` is not interpreted; last-received is used instead.
+      received across all files, among the records drop_late_records() keeps
+      (build_settlement_oi_panel() applies it): a final settlement is
+      published after the preliminary one, and the Sunday-open re-send of
+      Friday's settlement (Sunday-dated file, `ts_ref` = Friday) lands on
+      Friday, not Sunday. `stat_flags` is not interpreted; last-received is
+      used instead.
     - A last record whose `update_action` is DELETE removes the value (NaN).
     - Trade dates on a Saturday or Sunday are dropped (CME has no weekend
       trade dates; a non-zero count means `ts_ref` is not what this module
@@ -175,14 +213,19 @@ def build_settlement_oi_panel(data_dir: Path = None) -> pd.DataFrame:
     if not files:
         raise FileNotFoundError(f"No statistics files found at {schema_dir}")
 
-    frames, n_undefined = [], 0
-    for f in files:
-        thin, n_undef = thin_statistics_records(db.DBNStore.from_file(f).to_df())
+    frames, n_undefined, latest = [], 0, {}
+    n_late = {SETTLEMENT_STAT_TYPE: 0, OPEN_INTEREST_STAT_TYPE: 0}
+    for f in files:   # file names sort by UTC delivery day, i.e. in ts_recv order
+        thin, n_undef, late = thin_statistics_records(db.DBNStore.from_file(f).to_df(), latest)
         frames.append(thin)
         n_undefined += n_undef
+        for st, n in late.items():
+            n_late[st] += n
     panel = settlement_oi_from_statistics(pd.concat(frames, ignore_index=True))
     panel.attrs["diagnostics"] = {**panel.attrs["diagnostics"], "n_files": len(files),
-                                  "n_undefined_ts_ref": n_undefined}
+                                  "n_undefined_ts_ref": n_undefined,
+                                  "n_late_settlement_dropped": n_late[SETTLEMENT_STAT_TYPE],
+                                  "n_late_open_interest_dropped": n_late[OPEN_INTEREST_STAT_TYPE]}
     return panel
 
 

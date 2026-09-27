@@ -283,6 +283,11 @@ def write_report(full_panel, xs_result, ts_result, lag1_results, n_filled_by_sym
          "without a `ts_ref` dropped, "
          f"{statistics_diagnostics.get('n_deleted', 'n/a')} DELETE records "
          "applied. Open interest = `StatType.OPEN_INTEREST`."),
+        ("- **Late-record rule (DATA_FIX, 2026-09-27; `reports/ADDENDUM_2026-09-27.md` §10):** "
+         "a record for trade date d received after the same instrument's record of the same "
+         "stat type for a later trade date is ignored. Dropped: "
+         f"{statistics_diagnostics.get('n_late_settlement_dropped', 'n/a')} settlement records, "
+         f"{statistics_diagnostics.get('n_late_open_interest_dropped', 'n/a')} open-interest records."),
         "- **Roll rule and carry-next selection:** A1 (multi-candidate "
         "OI-max roll rule) and A2 (next-OI-bearing carry-next), per "
         "`DEVIATIONS.md` 2026-07-15 -- this run uses the amended pipeline "

@@ -185,3 +185,66 @@ def test_daily_calendar_holds_only_trade_dates_and_matches_252_annualisation(tmp
     oi = outright[(outright["instrument_id"] == 1)].set_index("date")["oi"]
     assert oi.loc[trade_dates[0]] == pytest.approx(2000)
     assert (oi < 50_000).all()
+
+
+# ---------------------------------------------------------------------------
+# Late-record rule (DATA_FIX, delegate decision 2026-09-27T18:15:08Z;
+# reports/ADDENDUM_2026-09-27.md §10)
+# ---------------------------------------------------------------------------
+def _clk0_feed():
+    """The real CLK0 records for trade dates 2020-04-17 (Friday) and
+    2020-04-20 (Monday), as RERUN_RUNBOOK.md step 2 printed them: Friday's
+    18.27 three times and its Sunday re-send, Monday's -37.63 twice, then a
+    Monday-evening record carrying Monday's -37.63 under ts_ref = Friday."""
+    fri, sun, mon = "2020-04-17", "2020-04-19", "2020-04-20"
+    return [
+        _stat(22770, SETTLE, f"{fri} 18:32:07", fri, price=18.27),
+        _stat(22770, SETTLE, f"{fri} 18:45:30", fri, price=18.27),
+        _stat(22770, SETTLE, f"{fri} 21:38:03", fri, price=18.27),
+        _stat(22770, SETTLE, f"{sun} 18:05:26", fri, price=18.27),
+        _stat(22770, SETTLE, f"{mon} 18:33:01", mon, price=-37.63),
+        _stat(22770, SETTLE, f"{mon} 18:53:15", mon, price=-37.63),
+        _stat(22770, SETTLE, f"{mon} 21:43:42", fri, price=-37.63),   # late: Monday's value, Friday's ts_ref
+    ]
+
+
+def test_late_settlement_cannot_overwrite_an_earlier_trade_date_clk0(tmp_path):
+    """Pre-fix (last received per trade date, no late filter) Friday
+    2020-04-17 takes Monday's -37.63; with the late-record rule it keeps the
+    CME settlement 18.27, and the dropped record is counted."""
+    import databento as db
+    from src.pipeline import settlement_oi_from_statistics, thin_statistics_records
+
+    _write_statistics_files(tmp_path, _clk0_feed())
+    files = sorted((tmp_path / "statistics").glob("*.dbn.zst"))
+    pre_fix = settlement_oi_from_statistics(pd.concat(
+        [thin_statistics_records(db.DBNStore.from_file(f).to_df())[0] for f in files], ignore_index=True))
+    assert pre_fix.set_index("date").loc[pd.Timestamp("2020-04-17"), "settlement"] == pytest.approx(-37.63)
+
+    panel = build_settlement_oi_panel(tmp_path).set_index("date")
+    assert panel.loc[pd.Timestamp("2020-04-17"), "settlement"] == pytest.approx(18.27)
+    assert panel.loc[pd.Timestamp("2020-04-20"), "settlement"] == pytest.approx(-37.63)
+    assert panel.attrs["diagnostics"]["n_late_settlement_dropped"] == 1
+    assert panel.attrs["diagnostics"]["n_late_open_interest_dropped"] == 0
+
+
+def test_next_day_open_interest_is_kept(tmp_path):
+    """Open interest for trade date d is published after d's session, in
+    the next UTC day's file (CLK0: 2020-04-13's OI at 2020-04-14 01:07 UTC;
+    Friday's in the Sunday file), and settlements for d + 1 arrive before
+    d + 1's OI. None of these is late: every OI value must be kept. (The
+    withdrawn file-date rule of 2026-09-27T16:54:16Z dropped all but
+    Friday's.)"""
+    oi = {"2020-04-13": ("2020-04-14 01:07:48", 324547), "2020-04-14": ("2020-04-15 01:18:08", 231678),
+          "2020-04-15": ("2020-04-16 01:21:28", 203897), "2020-04-16": ("2020-04-17 01:31:57", 148838),
+          "2020-04-17": ("2020-04-19 17:30:30", 108593), "2020-04-20": ("2020-04-21 01:30:07", 13044)}
+    records = []
+    for d, (recv, qty) in oi.items():
+        records.append(_stat(22770, SETTLE, f"{d} 18:30", d, price=20.0))
+        records.append(_stat(22770, OPEN_INTEREST, recv, d, quantity=qty))
+    _write_statistics_files(tmp_path, records)
+    panel = build_settlement_oi_panel(tmp_path).set_index("date")
+    for d, (_, qty) in oi.items():
+        assert panel.loc[pd.Timestamp(d), "oi"] == pytest.approx(qty)
+    assert panel.attrs["diagnostics"]["n_late_open_interest_dropped"] == 0
+    assert panel.attrs["diagnostics"]["n_late_settlement_dropped"] == 0
