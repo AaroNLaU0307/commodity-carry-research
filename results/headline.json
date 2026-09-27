@@ -1,0 +1,95 @@
+{
+  "schema": "headline/v1",
+  "repo": "AaroNLaU0307/commodity-carry-research",
+  "source_commit": "f0847d7c5bc04aa2048b64fa37a3e0c51347c2d3",
+  "as_of": "2026-09-27",
+  "rows": [
+    {
+      "id": "xs-carry",
+      "section": "archive",
+      "hypothesis": "Cross-sectional commodity carry (18 CME futures)",
+      "verdict": "NOT PROMOTED",
+      "verdict_detail": "all 5 pre-registered promotion gates fail; figures predate the 2026-09-27 corrections, re-run pending",
+      "mechanism": "no confirmable edge net of costs; all 12 registered variants below the 0.30 gate; long-leg gains offset by short-leg losses",
+      "stats": [
+        {
+          "label": "net Sharpe",
+          "display": "−0.003",
+          "value": -0.0031,
+          "artifact": "reports/PRIMARY_REPORT.md",
+          "locator": "line 16: H1 'Annualized net Sharpe (seed 7, point estimate)'",
+          "provenance": "predates fix; pending re-run"
+        },
+        {
+          "label": "95% CI low",
+          "display": "−0.44",
+          "value": -0.4417,
+          "artifact": "reports/PRIMARY_REPORT.md",
+          "locator": "line 17: H1 '95% bootstrap CI' (seed 7)",
+          "provenance": "predates fix; pending re-run"
+        },
+        {
+          "label": "95% CI high",
+          "display": "0.43",
+          "value": 0.4287,
+          "artifact": "reports/PRIMARY_REPORT.md",
+          "locator": "line 17: H1 '95% bootstrap CI' (seed 7)",
+          "provenance": "predates fix; pending re-run"
+        }
+      ],
+      "caveats": [
+        "Figures predate the 2026-09-27 corrections (trade-date calendar, open-interest field, cost/leverage, DSR inputs); re-run pending: reports/ADDENDUM_2026-09-27.md",
+        "Published run annualised with sqrt(252) over ~313 rows/yr (Sunday and holiday rows)",
+        "'Open interest' in the published run was CME cleared volume (stat_type 6)",
+        "Long/short split is an exploratory attribution without a CI"
+      ]
+    },
+    {
+      "id": "ts-carry",
+      "section": "archive",
+      "hypothesis": "Time-series commodity carry (own-basis sign)",
+      "verdict": "NOT PROMOTED",
+      "verdict_detail": "all 5 pre-registered promotion gates fail; figures predate the 2026-09-27 corrections, re-run pending",
+      "mechanism": "sign of own carry has no detectable predictive slope (premise t = 0.30); net Sharpe negative with a 95% CI spanning zero",
+      "stats": [
+        {
+          "label": "net Sharpe",
+          "display": "−0.126",
+          "value": -0.1255,
+          "artifact": "reports/PRIMARY_REPORT.md",
+          "locator": "line 72: H2 'Annualized net Sharpe (seed 7, point estimate)'",
+          "provenance": "predates fix; pending re-run"
+        },
+        {
+          "label": "95% CI low",
+          "display": "−0.56",
+          "value": -0.558,
+          "artifact": "reports/PRIMARY_REPORT.md",
+          "locator": "line 73: H2 '95% bootstrap CI' (seed 7)",
+          "provenance": "predates fix; pending re-run"
+        },
+        {
+          "label": "95% CI high",
+          "display": "0.32",
+          "value": 0.3227,
+          "artifact": "reports/PRIMARY_REPORT.md",
+          "locator": "line 73: H2 '95% bootstrap CI' (seed 7)",
+          "provenance": "predates fix; pending re-run"
+        },
+        {
+          "label": "premise t (clustered)",
+          "display": "0.30",
+          "value": 0.3,
+          "artifact": "reports/PREMISE_REPORT.md",
+          "locator": "line 74: TS premise 'Clustered t-statistic'",
+          "provenance": "predates fix; pending re-run"
+        }
+      ],
+      "caveats": [
+        "Figures predate the 2026-09-27 corrections (trade-date calendar, open-interest field, cost/leverage, DSR inputs); re-run pending: reports/ADDENDUM_2026-09-27.md",
+        "Published run annualised with sqrt(252) over ~313 rows/yr (Sunday and holiday rows)",
+        "Net Sharpe is reported to 4 dp (-0.1255); -0.126 rounds that figure half away from zero, the 5th decimal is not reported"
+      ]
+    }
+  ]
+}

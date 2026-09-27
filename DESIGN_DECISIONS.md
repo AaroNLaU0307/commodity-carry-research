@@ -59,16 +59,22 @@ independently checkable:
    parameters, not fewer, than the multi-candidate OI-max rule actually adopted, which uses the same t−1
    look-ahead discipline as before and adds no new threshold beyond existence (`OI > 0`).
 
-## Why ~30 variants, and not more? What about [some other construction]?
+## Why 12 registered variants, and not more? What about [some other construction]?
 
-`PREREGISTRATION.md` §9 locks a NOT-testing list *before* any computation: basis-momentum, carry×momentum
-interaction, COT/hedging-pressure signals, seasonality conditioning, curve curvature, volatility-managed
-overlays, any cutoff/threshold optimization, dynamic or learned weighting, regime filtering, intraday
-signals, and any parameter search. Anything not in the registered ten robustness items (§8) plus the
-one F7 diagnostic is, by construction, on that list — the honest answer to "did you try X" for any X
-outside that set is "it was pre-declared out of scope specifically so that a disappointing result
-couldn't be followed by an ad hoc eleventh variant that happened to work." The ten items that *were*
-registered were chosen before Run 4 existed, not selected afterward as the ones worth trying.
+The ten §8 robustness items build 12 registered variant series (items 1–7 and 10; §10's ledger) and all
+12 were run. Items 8–9 and the F7 ex-PA/PL series are diagnostic slices of the primary series, not
+variants. `PREREGISTRATION.md` §9 locks a NOT-testing list *before* any computation: basis-momentum,
+carry×momentum interaction, COT/hedging-pressure signals, seasonality conditioning, curve curvature,
+volatility-managed overlays, any cutoff/threshold optimization, dynamic or learned weighting, regime
+filtering, intraday signals, and any parameter search. Anything not in the registered ten robustness
+items (§8) plus the one F7 diagnostic is, by construction, on that list — the honest answer to "did you
+try X" for any X outside that set is "it was pre-declared out of scope specifically so that a
+disappointing result couldn't be followed by an ad hoc eleventh variant that happened to work." The ten
+items that *were* registered were chosen before Run 4 existed, not selected afterward as the ones worth
+trying; the exact specifications of items 1, 4 and 5 were fixed when the code was written and were not
+logged (recorded retroactively in `reports/ADDENDUM_2026-09-27.md` §6). One sensitivity was added on
+2026-09-27, before the corrected re-run: execution one trading day after the signal, for both arms
+(`preregistration/AMENDMENT_2026-09-27.md`), which raises N_trials from 14 to 16.
 
 ## Why report a confidence interval this wide instead of a tighter, more flattering one?
 

@@ -105,7 +105,7 @@ def main():
         f"Generated (UTC): {datetime.now(timezone.utc).isoformat()}",
         "",
         "Raw files live in `DATA_DIR` (see `src/config.py` / README's Data storage "
-        "section) -- outside this repo and outside OneDrive. Never committed. This "
+        "section) -- licensed, git-ignored, never committed. This "
         "manifest is the committed record of what was pulled, when, and its checksums.",
         "",
         "## Request parameters (locked, PREREGISTRATION.md Sec 2)",

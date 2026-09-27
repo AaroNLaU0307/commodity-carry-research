@@ -1,4 +1,6 @@
+# Python 3.13 (matches CI)
 databento==0.81.0
+databento-dbn==0.62.0
 pandas==2.3.3
 numpy==2.5.0
 scipy==1.18.0
@@ -6,3 +8,4 @@ statsmodels==0.14.6
 python-dotenv==1.2.1
 matplotlib==3.11.0
 pytest==9.1.1
+zstandard==0.25.0
