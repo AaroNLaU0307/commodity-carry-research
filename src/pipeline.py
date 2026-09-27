@@ -122,6 +122,53 @@ def drop_late_records(records: pd.DataFrame, latest: dict) -> tuple:
     return r[~late], n_dropped
 
 
+def statistics_records(stats_df: pd.DataFrame) -> pd.DataFrame:
+    """One statistics file's `DBNStore.to_df()` frame (ts_recv index) -> its
+    SETTLEMENT_PRICE and OPEN_INTEREST records, `date` = the `ts_ref` trade
+    date (tz-naive midnight; NaT where the record carries none), with price,
+    quantity, update_action and ts_recv. No record is dropped or reduced."""
+    d = stats_df.reset_index()
+    if "ts_recv" not in d.columns:
+        d = d.rename(columns={d.columns[0]: "ts_recv"})
+    sub = d[d["stat_type"].isin([SETTLEMENT_STAT_TYPE, OPEN_INTEREST_STAT_TYPE])]
+    trade_date = pd.to_datetime(sub["ts_ref"], utc=True).dt.tz_convert(None).dt.normalize()
+    return pd.DataFrame({
+        "date": trade_date,
+        "instrument_id": sub["instrument_id"],
+        "stat_type": sub["stat_type"].astype(int),
+        "price": sub["price"],
+        "quantity": sub["quantity"],
+        "update_action": sub["update_action"],
+        "ts_recv": sub["ts_recv"],
+    })
+
+
+def infer_missing_oi_trade_dates(records: pd.DataFrame, latest: dict) -> tuple:
+    """Trade date for OPEN_INTEREST records that carry no `ts_ref` (DATA_FIX,
+    delegate decision of 2026-09-27T19:54:48Z, reports/ADDENDUM_2026-09-27.md
+    §10). In this corpus every OPEN_INTEREST record delivered before
+    2015-11-20 has no `ts_ref`; from then on each carries the previous trade
+    date. Such a record is dated to the latest trade date for which the same
+    instrument has a SETTLEMENT_PRICE record received before the OI record's
+    `ts_recv` (earlier in this file, or in an earlier file via `latest`,
+    keyed (instrument_id, SETTLEMENT_PRICE)). Records that carry a `ts_ref`
+    keep it; settlements are never changed. A record with no earlier
+    settlement for its instrument stays undated. Must run before
+    drop_late_records() updates `latest` for this file.
+
+    Returns (records, n_inferred)."""
+    r = records.sort_values("ts_recv", kind="stable").copy()
+    is_settle = r["stat_type"] == SETTLEMENT_STAT_TYPE
+    running = r["date"].where(is_settle).groupby(r["instrument_id"], sort=False).cummax()
+    running = running.groupby(r["instrument_id"], sort=False).ffill()
+    carried = pd.Series([latest.get((i, SETTLEMENT_STAT_TYPE), pd.NaT) for i in r["instrument_id"]],
+                        index=r.index, dtype="datetime64[ns]")
+    prior_settle = pd.concat([running, carried], axis=1).max(axis=1)
+    missing = (r["stat_type"] == OPEN_INTEREST_STAT_TYPE) & r["date"].isna()
+    r.loc[missing, "date"] = prior_settle[missing]
+    return r, int((missing & r["date"].notna()).sum())
+
+
 def thin_statistics_records(stats_df: pd.DataFrame, latest: dict | None = None) -> tuple:
     """One statistics file's `DBNStore.to_df()` frame (ts_recv index) ->
     (thin, n_undefined_ts_ref, n_late_dropped). `thin` keeps only
@@ -131,30 +178,33 @@ def thin_statistics_records(stats_df: pd.DataFrame, latest: dict | None = None) 
     (date, instrument_id, stat_type) within the file. Records whose `ts_ref`
     is undefined (NaT) cannot be placed on a trade date and are dropped;
     their count is returned so the caller can report it rather than lose it
-    silently. With `latest` (see drop_late_records()), late records are
-    removed record by record *before* the within-file reduction, so a late
-    record can never displace an earlier valid one."""
-    d = stats_df.reset_index()
-    if "ts_recv" not in d.columns:
-        d = d.rename(columns={d.columns[0]: "ts_recv"})
-    sub = d[d["stat_type"].isin([SETTLEMENT_STAT_TYPE, OPEN_INTEREST_STAT_TYPE])]
-    trade_date = pd.to_datetime(sub["ts_ref"], utc=True).dt.tz_convert(None).dt.normalize()
-    thin = pd.DataFrame({
-        "date": trade_date,
-        "instrument_id": sub["instrument_id"],
-        "stat_type": sub["stat_type"].astype(int),
-        "price": sub["price"],
-        "quantity": sub["quantity"],
-        "update_action": sub["update_action"],
-        "ts_recv": sub["ts_recv"],
-    })
+    silently. With `latest`, OPEN_INTEREST records without a `ts_ref` are
+    first dated by infer_missing_oi_trade_dates(), then late records are
+    removed record by record (drop_late_records()) *before* the within-file
+    reduction, so a late record can never displace an earlier valid one.
+    Records whose `ts_ref` is a Saturday or Sunday are dropped before either
+    step. The third element is {"late": {stat_type: n},
+    "oi_ts_ref_inferred": n, "weekend": [dropped weekend-dated records]}."""
+    thin = statistics_records(stats_df)
+    counts = {"late": {}, "oi_ts_ref_inferred": 0, "weekend": []}
+    if latest is not None:
+        # Weekend-dated records are dropped as they are read, before they can
+        # enter the carried state: kept, a Sunday-dated settlement would make
+        # the Sunday re-send of Friday's settlement "late" and date the next
+        # undated OI records to the Sunday (delegate decision of
+        # 2026-09-27T19:54:48Z; reports/ADDENDUM_2026-09-27.md §10).
+        weekend = thin["date"].notna() & (thin["date"].dt.dayofweek >= 5)
+        counts["weekend"] = [
+            f"{r.date:%Y-%m-%d} instrument_id={int(r.instrument_id)} stat_type={int(r.stat_type)}"
+            for r in thin[weekend].itertuples(index=False)]
+        thin = thin[~weekend]
+        thin, counts["oi_ts_ref_inferred"] = infer_missing_oi_trade_dates(thin, latest)
     n_undefined = int(thin["date"].isna().sum())
     thin = thin[thin["date"].notna()]
-    n_late = {}
     if latest is not None:
-        thin, n_late = drop_late_records(thin, latest)
+        thin, counts["late"] = drop_late_records(thin, latest)
     thin = thin.sort_values("ts_recv", kind="stable").drop_duplicates(subset=_STAT_KEY, keep="last")
-    return thin.reset_index(drop=True), n_undefined, n_late
+    return thin.reset_index(drop=True), n_undefined, counts
 
 
 def settlement_oi_from_statistics(thin: pd.DataFrame) -> pd.DataFrame:
@@ -169,9 +219,11 @@ def settlement_oi_from_statistics(thin: pd.DataFrame) -> pd.DataFrame:
       Friday, not Sunday. `stat_flags` is not interpreted; last-received is
       used instead.
     - A last record whose `update_action` is DELETE removes the value (NaN).
-    - Trade dates on a Saturday or Sunday are dropped (CME has no weekend
-      trade dates; a non-zero count means `ts_ref` is not what this module
-      assumes and is reported in `attrs["diagnostics"]`).
+    - Trade dates on a Saturday or Sunday are dropped: CME has no weekend
+      trade dates, so the kept calendar never holds one. The dropped records
+      are counted and listed in `attrs["diagnostics"]` (delegate decision of
+      2026-09-27T19:54:48Z: eight SETTLEMENT_PRICE records in this corpus
+      carry a Sunday `ts_ref`).
     - OI with the undefined-quantity sentinel is NaN.
     """
     t = thin.sort_values("ts_recv", kind="stable").drop_duplicates(subset=_STAT_KEY, keep="last")
@@ -180,6 +232,9 @@ def settlement_oi_from_statistics(thin: pd.DataFrame) -> pd.DataFrame:
     diagnostics = {
         "n_deleted": int(deleted.sum()),
         "n_weekend_trade_date_dropped": int(weekend.sum()),
+        "weekend_trade_date_dropped": [
+            f"{r.date:%Y-%m-%d} instrument_id={int(r.instrument_id)} stat_type={int(r.stat_type)}"
+            for r in t[weekend].itertuples(index=False)],
     }
     t = t[~weekend]
     deleted = deleted[~weekend]
@@ -215,15 +270,23 @@ def build_settlement_oi_panel(data_dir: Path = None) -> pd.DataFrame:
 
     frames, n_undefined, latest = [], 0, {}
     n_late = {SETTLEMENT_STAT_TYPE: 0, OPEN_INTEREST_STAT_TYPE: 0}
+    n_inferred, weekend = 0, []
     for f in files:   # file names sort by UTC delivery day, i.e. in ts_recv order
-        thin, n_undef, late = thin_statistics_records(db.DBNStore.from_file(f).to_df(), latest)
+        thin, n_undef, counts = thin_statistics_records(db.DBNStore.from_file(f).to_df(), latest)
         frames.append(thin)
         n_undefined += n_undef
-        for st, n in late.items():
+        n_inferred += counts["oi_ts_ref_inferred"]
+        weekend += counts["weekend"]
+        for st, n in counts["late"].items():
             n_late[st] += n
     panel = settlement_oi_from_statistics(pd.concat(frames, ignore_index=True))
-    panel.attrs["diagnostics"] = {**panel.attrs["diagnostics"], "n_files": len(files),
+    diag = panel.attrs["diagnostics"]
+    weekend += diag["weekend_trade_date_dropped"]   # none expected: already dropped as read
+    panel.attrs["diagnostics"] = {**diag, "n_files": len(files),
+                                  "n_weekend_trade_date_dropped": len(weekend),
+                                  "weekend_trade_date_dropped": weekend,
                                   "n_undefined_ts_ref": n_undefined,
+                                  "n_oi_ts_ref_inferred": n_inferred,
                                   "n_late_settlement_dropped": n_late[SETTLEMENT_STAT_TYPE],
                                   "n_late_open_interest_dropped": n_late[OPEN_INTEREST_STAT_TYPE]}
     return panel

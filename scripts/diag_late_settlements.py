@@ -11,7 +11,9 @@ late-record rule in src/pipeline.py (drop_late_records(), delegate decision
 2026-09-27T18:15:08Z) drops it.
 
 This script replays every record of the two stat types in ts_recv order,
-independently of the pipeline code, and reports per stat type:
+independently of the pipeline code, and reports per stat type (records
+without ts_ref and weekend-dated records are left out, as the pipeline drops
+them before this rule; OI records dated by inference are not covered):
   - late records (the ones the rule drops), split into those whose value
     equals the value already held for (instrument, d) and those that differ;
   - how many kept (instrument, trade date) values the rule changes, compared
@@ -54,7 +56,8 @@ def main(out_csv=None) -> int:
         if s.empty:
             continue
         s = s.assign(ref=pd.to_datetime(s["ts_ref"], utc=True).dt.normalize())
-        s = s[s["ref"].notna()].sort_values("ts_recv", kind="stable")
+        s = s[s["ref"].notna() & (s["ref"].dt.dayofweek < 5)]   # weekend-dated records dropped as read
+        s = s.sort_values("ts_recv", kind="stable")
         for row in s.itertuples(index=False):
             st, iid, ref = int(row.stat_type), int(row.instrument_id), row.ref.value
             val = float(row.price) if st == SETTLE else float(row.quantity)

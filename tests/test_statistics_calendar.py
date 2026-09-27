@@ -8,6 +8,8 @@ The feed is split by UTC day. CME trade dates run Monday-Friday; the Sunday
 22:00 UTC session open re-sends Friday's settlement (ts_ref = Friday) inside
 a Sunday-dated file, and open interest for trade date D is published in a
 later file with ts_ref = D."""
+from pathlib import Path
+
 import databento_dbn as dbn
 import numpy as np
 import pandas as pd
@@ -108,14 +110,16 @@ def test_cleared_volume_is_never_taken_as_open_interest(tmp_path):
 
 
 def test_deleted_and_undated_statistics_are_not_used(tmp_path):
-    """A settlement whose last record is a DELETE is NaN, and a record with
-    an undefined ts_ref (no trade date) is dropped and counted."""
+    """A settlement whose last record is a DELETE is NaN, and a settlement
+    with an undefined ts_ref (no trade date) is dropped and counted.
+    (Open-interest records without ts_ref are dated instead, see
+    test_pre_2015_open_interest_without_ts_ref_is_dated_to_the_previous_settlement.)"""
     day = "2020-04-15"
     _write_statistics_files(tmp_path, [
         _stat(7, SETTLE, f"{day} 19:30", day, price=19.87),
         _stat(7, SETTLE, f"{day} 19:31", day, price=19.87, update_action=dbn.StatUpdateAction.DELETE),
         _stat(7, OPEN_INTEREST, f"{day} 19:32", day, quantity=500),
-        _stat(7, OPEN_INTEREST, f"{day} 19:33", None, quantity=123456),
+        _stat(7, SETTLE, f"{day} 19:33", None, price=99.0),
     ])
     panel = build_settlement_oi_panel(tmp_path)
     assert len(panel) == 1
@@ -248,3 +252,106 @@ def test_next_day_open_interest_is_kept(tmp_path):
         assert panel.loc[pd.Timestamp(d), "oi"] == pytest.approx(qty)
     assert panel.attrs["diagnostics"]["n_late_open_interest_dropped"] == 0
     assert panel.attrs["diagnostics"]["n_late_settlement_dropped"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Open interest without ts_ref (DATA_FIX, delegate decision
+# 2026-09-27T19:54:48Z; reports/ADDENDUM_2026-09-27.md §10)
+# ---------------------------------------------------------------------------
+def test_pre_2015_open_interest_without_ts_ref_is_dated_to_the_previous_settlement(tmp_path):
+    """Before 2015-11-20 the feed delivers OPEN_INTEREST with no ts_ref, in
+    the next UTC day's file (06:00-15:00 UTC on weekdays; Friday's in the
+    Sunday file at ~20:00 UTC). Each is dated to the latest trade date for
+    which its instrument has a settlement received earlier. An OI record
+    that does carry a ts_ref keeps it; an OI record with no earlier
+    settlement for its instrument stays undated and is counted."""
+    wed, thu, fri, sun, mon = "2014-06-11", "2014-06-12", "2014-06-13", "2014-06-15", "2014-06-16"
+    _write_statistics_files(tmp_path, [
+        _stat(5, OPEN_INTEREST, f"{wed} 06:07", None, quantity=1),         # no settlement yet: stays undated
+        _stat(5, SETTLE, f"{wed} 18:30", wed, price=100.0),
+        _stat(5, OPEN_INTEREST, f"{thu} 06:07", None, quantity=1000),      # -> Wednesday
+        _stat(5, SETTLE, f"{thu} 18:30", thu, price=101.0),
+        _stat(5, OPEN_INTEREST, f"{fri} 06:12", None, quantity=1100),      # -> Thursday
+        _stat(5, SETTLE, f"{fri} 18:30", fri, price=102.0),
+        _stat(5, SETTLE, f"{sun} 20:00", fri, price=102.0),                # Sunday re-send of Friday
+        _stat(5, OPEN_INTEREST, f"{sun} 20:07", None, quantity=1200),      # -> Friday
+        _stat(5, SETTLE, f"{mon} 18:30", mon, price=103.0),
+        _stat(6, SETTLE, f"{mon} 18:31", mon, price=50.0),
+        _stat(6, OPEN_INTEREST, f"{mon} 18:40", fri, quantity=77),         # carries ts_ref: kept as Friday
+    ])
+    panel = build_settlement_oi_panel(tmp_path)
+    oi = panel.dropna(subset=["oi"]).set_index(["instrument_id", "date"])["oi"]
+    assert oi.to_dict() == {(5, pd.Timestamp(wed)): 1000, (5, pd.Timestamp(thu)): 1100,
+                            (5, pd.Timestamp(fri)): 1200, (6, pd.Timestamp(fri)): 77}
+    assert panel.attrs["diagnostics"]["n_oi_ts_ref_inferred"] == 3
+    assert panel.attrs["diagnostics"]["n_undefined_ts_ref"] == 1
+    assert panel.attrs["diagnostics"]["n_late_open_interest_dropped"] == 0
+
+
+_JUNE_2010 = pd.date_range("2010-06-06", "2010-07-02")
+
+
+def _real_june_2010_corpus(tmp_path):
+    import shutil
+    src = Path(config.DATA_DIR)
+    days = [f"{d:%Y%m%d}" for d in _JUNE_2010]
+    stats = [f for d in days for f in (src / "statistics").glob(f"*{d}*.dbn.zst")]
+    defs = [f for d in days for f in (src / "definition").glob(f"*{d}*.dbn.zst")]
+    if not stats or not defs:
+        pytest.skip("needs the licensed Databento corpus in DATA_DIR")
+    for schema, files in (("statistics", stats), ("definition", defs)):
+        (tmp_path / schema).mkdir()
+        for f in files:
+            shutil.copy(f, tmp_path / schema / f.name)
+    return tmp_path
+
+
+def test_real_june_2010_cl_front_rolls_at_the_2010_06_22_expiry(tmp_path):
+    """Real files, 2010-06-06..2010-07-02 (licensed data; skipped without
+    it). Before the OI trade-date fix CL had no open interest here and its
+    front, CLN0 (expiry 2010-06-22), was held past expiry -- the 6786973
+    halt. With it, the front is never held past its expiry, and on the
+    first trade date after 2010-06-22 it is a later contract."""
+    from src import pipeline
+    data = _real_june_2010_corpus(tmp_path)
+    outright = build_outright_panel(pipeline.build_definition_lookup(data), build_settlement_oi_panel(data))
+    seq = pipeline.symbol_listed_sequence(outright, "CL")
+    front = pipeline.symbol_front_series(pipeline.symbol_oi_wide(outright, "CL", seq), seq)
+    expiry = (outright[outright["asset"] == "CL"].drop_duplicates("_contract_key")
+              .set_index("_contract_key")["expiration"])
+    exp_of_front = pd.to_datetime(front.map(expiry)).dt.tz_localize(None).dt.normalize()
+    assert (exp_of_front >= front.index).all()
+    after = front[front.index > pd.Timestamp("2010-06-22")]
+    assert exp_of_front[after.index[0]] > pd.Timestamp("2010-06-22")
+    assert not front.loc["2010-06-23":].str.startswith("182055").any()
+
+
+def test_sunday_dated_settlement_is_dropped_as_read_and_leaves_friday_intact(tmp_path):
+    """CLJ4 (instrument 819161), real sequence: Friday 2014-02-21 settles
+    102.2; the Sunday 2014-02-23 file carries a settlement dated the Sunday
+    itself (102.21) at 19:00:27, then the re-send of Friday's (102.2) at
+    19:02:05, then Friday's undated OI at 21:07 and again on Monday, the last
+    revised. The Sunday-dated record is dropped as it is read, counted and
+    listed. Kept in the carried state, it would make Friday's re-send "late"
+    and date every one of Friday's OI records to the Sunday, leaving Friday
+    without OI."""
+    fri, sun, mon = "2014-02-21", "2014-02-23", "2014-02-24"
+    _write_statistics_files(tmp_path, [
+        _stat(819161, OPEN_INTEREST, f"{fri} 07:06:59", None, quantity=329655),   # Thursday's
+        _stat(819161, SETTLE, f"{fri} 21:33:53", fri, price=102.2),
+        _stat(819161, SETTLE, f"{sun} 19:00:27", sun, price=102.21),              # Sunday-dated
+        _stat(819161, SETTLE, f"{sun} 19:02:05", fri, price=102.2),
+        _stat(819161, OPEN_INTEREST, f"{sun} 21:07:05", None, quantity=322108),
+        _stat(819161, OPEN_INTEREST, f"{mon} 07:07:09", None, quantity=322108),
+        _stat(819161, OPEN_INTEREST, f"{mon} 14:58:34", None, quantity=320747),   # Friday's, revised
+        _stat(819161, SETTLE, f"{mon} 21:33:48", mon, price=102.82),
+    ])
+    panel = build_settlement_oi_panel(tmp_path)
+    diag = panel.attrs["diagnostics"]
+    friday = panel.set_index("date").loc[pd.Timestamp(fri)]
+    assert friday["settlement"] == pytest.approx(102.2)
+    assert friday["oi"] == pytest.approx(320747)
+    assert pd.Timestamp(sun) not in set(panel["date"])
+    assert diag["n_weekend_trade_date_dropped"] == 1
+    assert diag["weekend_trade_date_dropped"] == [f"{sun} instrument_id=819161 stat_type={int(SETTLE)}"]
+    assert diag["n_late_settlement_dropped"] == 0

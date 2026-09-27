@@ -72,7 +72,7 @@ DATA_DIR=/path/to/commodity-carry python scripts/run_all.py
 
 This loads the corpus once and then runs premise → primary → robustness → figures. Reports and figures go to `reports/rerun/`; machine-readable results go to `results/`. The published `reports/*.md` and `reports/figures/*.png` are immutable and are never written. The first lines print the statistics diagnostics:
 
-- `n_weekend_trade_date_dropped` must be 0. Anything else means `ts_ref` is not the trade date this pipeline assumes, so stop.
+- No weekend trade dates in the kept calendar; weekend-dated records dropped are counted and listed (`n_weekend_trade_date_dropped`, `weekend_trade_date_dropped`; they are dropped as they are read, before the late-record rule and the open-interest date inference). This corpus has 8, all SETTLEMENT_PRICE records whose `ts_ref` is a Sunday: GCZ1 (instrument_id 197210) 2011-08-07; LE:BF Q2-V2-Z2 (66128), LE:BF V2-Z2-G3 (66130), HE:BF J2-K2-M2 (1208), GF:BF H2-J2-K2 (66134), GF:BF J2-K2-Q2 (66137) and GF:BF K2-Q2-U2 (66138) 2011-10-02; CLJ4 (819161) 2014-02-23. A different list is a new finding: stop and record it. (Amended 2026-09-27 by delegate decision; `reports/ADDENDUM_2026-09-27.md` §10.)
 - `n_undefined_ts_ref` and `n_deleted` are reported for the record.
 
 Single stages, in dependency order:
