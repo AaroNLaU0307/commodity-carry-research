@@ -11,10 +11,11 @@ significance: "if an arm's premise point estimate is ≤ 0 (wrong sign), that ar
 stage... A positive-but-insignificant premise estimate is not a gate failure." This is deliberate, not
 an oversight. The premise test is the cheapest possible check — a monthly rank correlation, no
 portfolio, no costs, no leverage — and its only job is to reject arms with the *wrong-signed* relationship
-before spending the much more expensive primary-family machinery on them. Both arms here passed that
-cheap gate (H1 mean IC +0.028489, NW(3) t=1.465; H2 coefficient +0.000672, t=0.300 —
-`reports/PREMISE_REPORT.md`) precisely because a positive-but-weak estimate is what the gate is
-*designed* to let through, so the bootstrap — the actual evidence bar (§6) — gets to make the real call.
+before spending the much more expensive primary-family machinery on them. In the corrected re-run it
+did exactly that: H2's coefficient is negative (−0.000143, t=−0.069), so H2 closed there without a
+backtest, while H1 passed (mean IC +0.028270, NW(3) t=1.372 — `reports/rerun/PREMISE_REPORT.md`) because a
+positive-but-weak estimate is what the gate is *designed* to let through, so the bootstrap — the actual
+evidence bar (§6) — gets to make the real call. (In the published, pre-correction run both arms passed.)
 Gating on significance at the premise stage would have meant deciding the outcome twice with two
 different, weaker tools instead of once with the right one.
 
@@ -61,8 +62,10 @@ independently checkable:
 
 ## Why 12 registered variants, and not more? What about [some other construction]?
 
-The ten §8 robustness items build 12 registered variant series (items 1–7 and 10; §10's ledger) and all
-12 were run. Items 8–9 and the F7 ex-PA/PL series are diagnostic slices of the primary series, not
+The ten §8 robustness items build 12 registered variant series (items 1–7 and 10; §10's ledger), and
+the execution-lag-1 pair registered on 2026-09-27 adds two more. In the corrected re-run H2 closed at the
+premise gate, so its series were not built: H1's 9 registered series (the eight items and its lag-1
+series) were all run (`results/robustness_variants.csv`). Items 8–9 and the F7 ex-PA/PL series are diagnostic slices of the primary series, not
 variants. `PREREGISTRATION.md` §9 locks a NOT-testing list *before* any computation: basis-momentum,
 carry×momentum interaction, COT/hedging-pressure signals, seasonality conditioning, curve curvature,
 volatility-managed overlays, any cutoff/threshold optimization, dynamic or learned weighting, regime
@@ -79,12 +82,12 @@ logged (recorded retroactively in `reports/ADDENDUM_2026-09-27.md` §6). One sen
 ## Why report a confidence interval this wide instead of a tighter, more flattering one?
 
 Because the bootstrap CI is a function of the achieved sample size and realized return volatility, not
-a design choice — `reports/PRIMARY_REPORT.md`'s CIs ([−0.44, 0.43] for H1, [−0.56, 0.32] for H2) are
-what 10,000 stationary-block resamples of the actual daily return series produce. Narrowing them would
+a design choice — `reports/rerun/PRIMARY_REPORT.md`'s CI for H1 ([−0.41, 0.52]; H2 closed at the premise
+gate) is what 10,000 stationary-block resamples of the actual daily return series produce. Narrowing them would
 require either more data (not available) or a less conservative method (not permitted — the stationary
 bootstrap was the pre-registered, advisor-affirmed primary inference method, §6). The width is itself
-informative: see the power statement in `README.md`'s Limitations section, computed directly from these
-two CIs, not asserted separately.
+informative: see the power statement in `README.md`'s Limitations section, computed directly from this
+CI (`results/dsr_thresholds.json`), not asserted separately.
 
 ## Why ship a negative result with the same rigor as `multi-asset-tsmom-research`'s supported result?
 

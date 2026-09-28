@@ -5,20 +5,20 @@
 **Verdict: no confirmable edge in this sample, net of costs.** A pre-registered, falsification-first
 test of the commodity carry premium — cross-sectional (H1) and time-series (H2) — on 18 CME futures
 across 4 sectors, 2010–2026. Design (universe, definitions, gates, robustness suite) was frozen and
-publicly timestamped before any data entered the repo. 0 of 2 primary arms promoted; none of the 12
-registered variants (all run) reaches the 0.30 Sharpe gate either, and diagnostic slices are reported
-alongside.
+publicly timestamped before any data entered the repo. 0 of 2 primary arms promoted: H2 closes at the
+sign-only premise gate (its premise estimate is negative), and H1 fails four of the five promotion gates.
+None of H1's 9 registered variants (all run) reaches the 0.30 Sharpe gate; H2's are not built once it
+closes. Diagnostic slices are reported alongside.
 
-> **Correction (2026-09-27).** The numbers and figures on this page predate the 2026-09-27 corrections:
-> the trading calendar (Sunday and holiday rows), the open-interest field (cleared volume had been read as
-> OI), the execution-lag registration, costs and leverage, and the DSR inputs. The code is fixed and
-> tested. The re-run needs the licensed corpus and is pending. What changed and which way each number
-> should move: [`reports/ADDENDUM_2026-09-27.md`](reports/ADDENDUM_2026-09-27.md).
+> **Re-run (2026-09-28).** The numbers and figures on this page are from the corrected re-run of
+> 2026-09-28 (code `70d1e03`): the 2026-09-27 corrections plus the data fixes found while re-running.
+> Published → corrected values: [`reports/ADDENDUM_2026-09-27.md`](reports/ADDENDUM_2026-09-27.md) §10. The
+> pre-correction reports and figures stay unchanged in `reports/` and `reports/figures/`.
 
 > 18 CME futures / 4 sectors · 2010-06-07 to 2026-06-30 · settlement-based signals · frozen conservative
-> cost table · stationary block bootstrap + DSR + BH-FDR · H1 net Sharpe **−0.003** (95% CI
-> **[−0.44, 0.43]**), H2 net Sharpe **−0.126** (95% CI **[−0.56, 0.32]**) · 168 passing tests, synthetic
-> fixtures only.
+> cost table · stationary block bootstrap + DSR + BH-FDR · H1 net Sharpe **0.059** (95% CI
+> **[−0.41, 0.52]**), H2 closed at the premise gate (TS coefficient **−0.000143**) · 173 tests: 172 on
+> synthetic fixtures, 1 on the licensed corpus (skipped without it).
 
 ## TL;DR
 
@@ -33,19 +33,19 @@ alongside.
 
   | Arm | Premise (point est.) | Sharpe | 95% CI | BH-FDR | CI excl. 0 | Sharpe≥0.30 | 2×cost>0 | DSR≥0.95 | Promotion |
   |---|---|---|---|---|---|---|---|---|---|
-  | H1 (XS) | +0.028489 (NW(3) t=1.465, p=0.143) | −0.0031 | [−0.4417, 0.4287] | FAIL | FAIL | FAIL | FAIL | FAIL | **NOT PROMOTED** |
-  | H2 (TS) | +0.000672 (t=0.300, p=0.764) | −0.1255 | [−0.5580, 0.3227] | FAIL | FAIL | FAIL | FAIL | FAIL | **NOT PROMOTED** |
+  | H1 (XS) | +0.028270 (NW(3) t=1.372, p=0.170) | 0.0591 | [−0.4142, 0.5239] | FAIL | FAIL | FAIL | PASS | FAIL | **NOT PROMOTED** |
+  | H2 (TS) | −0.000143 (t=−0.069, p=0.945) | — | — | — | — | — | — | — | **CLOSED AT PREMISE** (not promoted) |
 
-  (`reports/PREMISE_REPORT.md` §"XS premise"/"TS premise"; `reports/PRIMARY_REPORT.md` §"Summary")
+  (`reports/rerun/PREMISE_REPORT.md` §"XS premise"/"TS premise"; `reports/rerun/PRIMARY_REPORT.md` §"Summary")
 
-![Forest plot showing H1 and H2 net Sharpe ratios with 95% bootstrap confidence intervals, both crossing zero and neither approaching the 0.30 promotion gate; below them a strip of 26 point estimates — the 12 registered robustness variants and 14 diagnostic slices — clusters near zero with none reaching the gate.](reports/figures/gates_forest.png)
+![Forest plot of H1's net Sharpe, 0.0591, with its 95% bootstrap confidence interval from −0.41 to 0.52 crossing zero, the point estimate well short of the 0.30 promotion gate; below it two strips of point estimates — H1's 9 registered variants and 7 diagnostic slices — none reaching the gate.](reports/rerun/figures/gates_forest.png)
 
-*Figure 1 — H1/H2 net Sharpe (seed 7, the gate-deciding seed) with 95% bootstrap CIs, against the zero line and the 0.30 promotion gate. The gray strip holds 26 point estimates from `reports/ROBUSTNESS_REPORT.md`. Twelve are the registered variants: items 1–7 and 10, with item 6 the 2× cost table. Fourteen are diagnostic slices: F7 ex-PA/PL, sub-period halves and the drop-one-sector jackknife. The per-year and drop-one-year diagnostics are not plotted. This image was rendered before the 2026-09-27 corrections, and its title's "~30 registered variants" overstates the count. Source: `reports/PRIMARY_REPORT.md` §"Summary", `reports/ROBUSTNESS_REPORT.md`. The corrected pipeline renders its own version to `reports/rerun/figures/`; this published image stays as it is.*
+*Figure 1 — H1 net Sharpe (seed 7, the gate-deciding seed) with its 95% bootstrap CI, against the zero line and the 0.30 promotion gate. H2 closed at the premise gate, so it has no backtest to plot. The gray strips hold 16 point estimates from `results/robustness_variants.csv`. Nine are H1's registered variants: items 1–7 and 10 (item 6 is the 2× cost table) and execution one trading day after the signal. Seven are diagnostic slices: F7 ex-PA/PL, sub-period halves and the drop-one-sector jackknife. The per-year and drop-one-year diagnostics are not plotted. Source: `reports/rerun/PRIMARY_REPORT.md` §"Summary", `reports/rerun/ROBUSTNESS_REPORT.md`. The pre-correction figure stays at `reports/figures/gates_forest.png`.*
 
-- **Headline stats with CIs.** Both arms' 95% bootstrap confidence intervals span zero by a wide margin
-  — H1 [−0.44, 0.43], H2 [−0.56, 0.32] (`reports/PRIMARY_REPORT.md`) — and both Deflated Sharpe Ratios
-  sit near zero (H1 0.0399, H2 0.0107 against the 0.95 gate, N_trials=14 per `PREREGISTRATION.md` §10;
-  computed assuming normal returns, `reports/ADDENDUM_2026-09-27.md` §5).
+- **Headline stats with CIs.** H1's 95% bootstrap confidence interval spans zero by a wide margin —
+  [−0.41, 0.52] (`reports/rerun/PRIMARY_REPORT.md`) — and its Deflated Sharpe Ratio is 0.3915 against
+  the 0.95 gate (N_trials = 16, with H1's own skewness and excess kurtosis and the dispersion of the
+  registered Sharpes). H2 closed at the premise gate, so it has no Sharpe, CI or DSR.
 - **Public timestamp.** The pre-registration was committed and pushed to a public remote before any
   data entered the repository — `PREREGISTRATION.md` §12 step 1, `PUSH_CHECKLIST.md` — the freeze is
   independently verifiable, not merely asserted in a local commit message.
@@ -63,35 +63,34 @@ executed.
 
 ### What it looked like
 
-![Line chart of cumulative growth of $1 for H1 and H2, net and gross, over the full 2010-2026 sample; all four lines oscillate within a narrow band around the starting value of 1.0, and each arm's gross line tracks its net line closely throughout.](reports/figures/equity_curves.png)
+![Line chart of cumulative growth of $1 for H1, net and gross of costs, over 2010-2026; both lines move together around the starting value of 1.0, with the gross line a little above the net line.](reports/rerun/figures/equity_curves.png)
 
-*Figure 2 — Cumulative growth of $1, full sample, linear scale. Net (solid) and gross-of-cost (dotted)
-track each other closely for both arms. That is why the mechanism table's cost-drag row
-(`docs/MECHANISM_NOTES.md` row 2) is marked contradicted: gross Sharpe (H1 +0.0061, H2 −0.1288) is barely
-different from net (H1 −0.0031, H2 −0.1255). H2's gross below its net is an artefact of cost-model defects
-corrected on 2026-09-27: the published gross and net series had different leverage paths, and roll costs
-were credited to short positions (`reports/ADDENDUM_2026-09-27.md` §4). Source: `reports/PRIMARY_REPORT.md`,
-`reports/ROBUSTNESS_REPORT.md` §"(a) Gross-of-cost Sharpe". Rendered before the 2026-09-27 corrections.*
+*Figure 2 — Cumulative growth of $1 for H1, full sample, linear scale, net (solid) and gross of costs
+(dotted), with the same positions and leverage path. Gross Sharpe is 0.0860 against net 0.0591: costs
+are a small part of the result, which is why the mechanism table's cost-drag row
+(`docs/MECHANISM_NOTES.md` row 2) is marked contradicted. H2 closed at the premise gate and has no series.
+Source: `reports/rerun/PRIMARY_REPORT.md`, `reports/rerun/ROBUSTNESS_REPORT.md` §"(a) Gross-of-cost Sharpe".*
 
 ## Mechanism: why no edge, when the literature finds one
 
 Five candidate mechanisms, each checked against evidence already sitting in the committed reports —
 sample-period decay, cost drag, universe width, curve point, and construction choice — plus a
-long-leg-vs-short-leg attribution for H1: the long leg's gains (+1.87%/yr) offset the short leg's losses
-(−1.82%/yr), so there is no spread premium (`reports/ROBUSTNESS_REPORT.md` §(b); exploratory, no CI). Full
-table, citations, and verdicts: **[`docs/MECHANISM_NOTES.md`](docs/MECHANISM_NOTES.md).**
+long-leg-vs-short-leg attribution for H1: the long leg's gains (+1.96%/yr) outweigh the short leg's losses
+(−1.31%/yr), each net of its own costs (`reports/rerun/ROBUSTNESS_REPORT.md` §(b); exploratory, no CI).
+Full table, citations, and verdicts: **[`docs/MECHANISM_NOTES.md`](docs/MECHANISM_NOTES.md).**
 
-Short version: on the published (pre-correction) series, cost drag and construction choice are directly
-**contradicted** by the gross-of-cost and quintile/equal-weight restatements (the cost comparison is
-re-checked at the re-run, `reports/ADDENDUM_2026-09-27.md` §4); the curve-point question is **weakly, narrowly suggestive** for H1
-alone (the 12-month-deferred variant, `reports/ROBUSTNESS_REPORT.md` item 5); sample-period decay and
-universe width remain **genuinely open** — this corpus cannot settle them either way.
+Short version: on the corrected series, cost drag and construction choice are directly **contradicted**
+by the gross-of-cost and quintile/equal-weight restatements (gross 0.0860 against net 0.0591; quintiles
+0.0584 and equal-weight legs 0.0520); the curve-point question is **weakly, narrowly suggestive** for H1
+alone (the 12-month-deferred variant, 0.1750, `reports/rerun/ROBUSTNESS_REPORT.md` item 5); sample-period
+decay and universe width remain **genuinely open** — this corpus cannot settle them either way.
 
-<img src="reports/figures/per_year_returns.png" width="640" alt="Grouped bar chart of H1 and H2 annual net returns from 2010 to 2026, with the 2021-22 backwardation window shaded; both arms are positive in 2022 but it is not either arm's best year.">
+<img src="reports/rerun/figures/per_year_returns.png" width="640" alt="Bar chart of H1's annual net returns from 2010 to 2026, with the 2021-22 backwardation window shaded; H1 is slightly positive in both 2021 and 2022, far below its best years.">
 
-*Figure 3 — Annual net returns per arm, 2021–22 backwardation window shaded (row 1's sample-period-decay
-check). Full-size version and discussion: `docs/MECHANISM_NOTES.md` row 1. Source:
-`reports/ROBUSTNESS_REPORT.md` §"(c) Per-year table". Rendered before the 2026-09-27 corrections.*
+*Figure 3 — H1's annual net returns, 2021–22 backwardation window shaded (row 1's sample-period-decay
+check): +0.70% in 2021 and +2.97% in 2022, against best years of +16.47% (2013), +15.71% (2010) and
++14.71% (2017). H2 closed at the premise gate and has no series. Full-size version and discussion:
+`docs/MECHANISM_NOTES.md` row 1. Source: `reports/rerun/ROBUSTNESS_REPORT.md` §"(c) Per-year table".*
 
 ## War stories: four exchange-data identity traps, plus the price of look-ahead safety
 
@@ -148,28 +147,31 @@ sample. Source: `docs/DATA_QA_REPORT.md` finding F11 (census artifact
   primary.** `PREREGISTRATION.md` §3 locks the carry definition to front-vs-next; a further-out curve
   point was pre-registered as §8 item 5 specifically so it could be checked without becoming a second
   primary hypothesis — see `docs/MECHANISM_NOTES.md` row 4 for what it showed.
-- **Power statement.** From each arm's bootstrap standard error (≈ half the 95% CI width ÷ 1.96: H1 SE
-  ≈ 0.222, H2 SE ≈ 0.225 — `reports/PRIMARY_REPORT.md`), and the standard two-sided-5%/80%-power minimum
-  detectable effect (SE × 2.8), **this design could reliably confirm a true annualized net Sharpe of
-  roughly 0.6 or larger — not the 0.30 the gate itself required.** Put plainly: even a strategy sitting
-  exactly at this study's own promotion threshold would have had well under even odds of producing a
-  significant result at this sample size. The DSR gate is stricter still. Under the assumptions behind
-  the published DSRs (n = 5,030 daily observations, N_trials = 14, normal returns), DSR ≥ 0.95 requires
-  an annualized net Sharpe of about **0.76** (`reports/ADDENDUM_2026-09-27.md` §5). This is a limitation
-  stated with numbers, not an apology — the design was powered to catch a large edge, and a large edge is
-  not what commodity carry, on this construction, in this sample, turned out to be. All of these figures
-  predate the 2026-09-27 corrections.
+- **Power statement.** From H1's bootstrap standard error (≈ half the 95% CI width ÷ 1.96: SE ≈ 0.239)
+  and the standard two-sided-5%/80%-power minimum detectable effect (SE × 2.8 ≈ 0.67; both in
+  `results/dsr_thresholds.json`, computed from `results/primary_summary.json`), **this design could
+  reliably confirm a true annualized net Sharpe of roughly 0.67 or larger — not the 0.30 the gate itself
+  required.** Put plainly: even a strategy sitting exactly at this study's own promotion threshold would
+  have had well under even odds of producing a significant result at this sample size. The DSR gate sits
+  between the two: under the re-run's inputs (n = 4,069 daily observations, H1's skewness and excess
+  kurtosis, the dispersion of the registered Sharpes), DSR ≥ 0.95 requires an annualized net Sharpe of
+  about **0.54** at N_trials = 16 (0.53 at N_trials = 14; `results/dsr_thresholds.json`). H2 closed at the
+  premise gate and has no power statement. This is a limitation stated with numbers, not an apology — the
+  design was powered to catch a large edge, and a large edge is not what commodity carry, on this
+  construction, in this sample, turned out to be.
 
 ## Read this repo in 5 minutes
 
 1. [`preregistration/PREREGISTRATION.md`](preregistration/PREREGISTRATION.md) (+ its Amendments log at
    the end) — the frozen design, and the two post-freeze amendments (A1, A2).
-2. [`reports/PREMISE_REPORT.md`](reports/PREMISE_REPORT.md) — the cheap sign-only gate, and the full
-   run-history disclosure (three invalidated runs, why each was invalidated, why none was
-   result-motivated).
-3. [`reports/PRIMARY_REPORT.md`](reports/PRIMARY_REPORT.md) — the five promotion gates, evaluated.
-4. [`reports/ROBUSTNESS_REPORT.md`](reports/ROBUSTNESS_REPORT.md) — the 12 registered variants (all run)
-   plus diagnostic slices, none gating, all reported.
+2. [`reports/rerun/PREMISE_REPORT.md`](reports/rerun/PREMISE_REPORT.md) — the cheap sign-only gate
+   (H2 closes there), and the full run-history disclosure (three invalidated runs, why each was
+   invalidated, why none was result-motivated).
+3. [`reports/rerun/PRIMARY_REPORT.md`](reports/rerun/PRIMARY_REPORT.md) — the five promotion gates,
+   evaluated for H1.
+4. [`reports/rerun/ROBUSTNESS_REPORT.md`](reports/rerun/ROBUSTNESS_REPORT.md) — H1's 9 registered variants
+   (all run) plus diagnostic slices, none gating, all reported. The published pre-correction versions of
+   these three reports stay in `reports/`.
 5. [`DEVIATIONS.md`](DEVIATIONS.md) — the logged departures from the frozen design, dated, with authority
    and rationale for each. **Correction (2026-09-27):** an earlier version of this line said every
    departure was logged before the deviating computation ran. That is not so. The next-settlement ≤ 0
@@ -236,11 +238,11 @@ Python 3.13 (the version CI runs; `requirements.txt` pins every dependency):
 ```
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-pytest                                                          # 168 tests, synthetic fixtures only
+pytest                                                          # 173 tests; 1 needs the licensed corpus
 DATA_DIR=/path/to/commodity-carry python scripts/run_all.py check-data
 DATA_DIR=/path/to/commodity-carry python scripts/run_all.py     # writes reports/rerun/ and results/
 ```
 
 The two data commands need the licensed Databento corpus. [`RERUN_RUNBOOK.md`](RERUN_RUNBOOK.md) is the
-step-by-step for the pending re-run: what `check-data` must show before anything runs, and which report,
+step-by-step for the re-run: what `check-data` must show before anything runs, and which report,
 result and README numbers each stage produces.

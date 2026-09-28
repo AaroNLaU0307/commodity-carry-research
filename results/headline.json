@@ -1,54 +1,53 @@
 {
   "schema": "headline/v1",
   "repo": "AaroNLaU0307/commodity-carry-research",
-  "source_commit": "f0847d7c5bc04aa2048b64fa37a3e0c51347c2d3",
-  "as_of": "2026-09-27",
+  "source_commit": "PENDING",
+  "as_of": "2026-09-28",
   "rows": [
     {
       "id": "xs-carry",
       "section": "archive",
       "hypothesis": "Cross-sectional commodity carry (18 CME futures)",
       "verdict": "NOT PROMOTED",
-      "verdict_detail": "all 5 pre-registered promotion gates fail; figures predate the 2026-09-27 corrections, re-run pending",
-      "mechanism": "no confirmable edge net of costs; all 12 registered variants below the 0.30 gate; long-leg gains offset by short-leg losses",
+      "verdict_detail": "fails 4 of the 5 pre-registered promotion gates (only net Sharpe > 0 under the 2x cost table passes); corrected re-run of 2026-09-28, reports/ADDENDUM_2026-09-27.md §10",
+      "mechanism": "no confirmable edge net of costs; none of H1's 9 registered variants reaches the 0.30 gate; the long leg's gains outweigh the short leg's losses (exploratory, no CI)",
       "stats": [
         {
           "label": "net Sharpe",
-          "display": "−0.003",
-          "value": -0.0031,
-          "artifact": "reports/PRIMARY_REPORT.md",
-          "locator": "line 16: H1 'Annualized net Sharpe (seed 7, point estimate)'",
-          "provenance": "predates fix; pending re-run"
+          "display": "0.059",
+          "value": 0.05909566785274182,
+          "artifact": "results/primary_summary.json",
+          "locator": "json: arms.H1.net_sharpe",
+          "provenance": "reproduced"
         },
         {
           "label": "95% CI low",
-          "display": "−0.44",
-          "value": -0.4417,
-          "artifact": "reports/PRIMARY_REPORT.md",
-          "locator": "line 17: H1 '95% bootstrap CI' (seed 7)",
-          "provenance": "predates fix; pending re-run"
+          "display": "−0.41",
+          "value": -0.41422362618370406,
+          "artifact": "results/primary_summary.json",
+          "locator": "json: arms.H1.ci_by_seed.0.ci_low",
+          "provenance": "reproduced"
         },
         {
           "label": "95% CI high",
-          "display": "0.43",
-          "value": 0.4287,
-          "artifact": "reports/PRIMARY_REPORT.md",
-          "locator": "line 17: H1 '95% bootstrap CI' (seed 7)",
-          "provenance": "predates fix; pending re-run"
+          "display": "0.52",
+          "value": 0.5238930777030526,
+          "artifact": "results/primary_summary.json",
+          "locator": "json: arms.H1.ci_by_seed.0.ci_high",
+          "provenance": "reproduced"
         },
         {
           "label": "registered variants reaching the 0.30 gate",
-          "display": "0/12",
+          "display": "0/9",
           "value": 0,
-          "artifact": "reports/ROBUSTNESS_REPORT.md",
-          "locator": "lines 13-24: the 12 registered-variant rows (Sec 8 items 1-7 and 10) of the 'Items 1-5, 7, 10: constructed variants' table, column Sharpe",
-          "provenance": "predates fix; pending re-run"
+          "artifact": "results/robustness_variants.csv",
+          "locator": "csv: rows with kind == registered (H1's 8 Sec 8 items and its execution-lag-1 series), column sharpe",
+          "provenance": "reproduced"
         }
       ],
       "caveats": [
-        "Figures predate the 2026-09-27 corrections (trade-date calendar, open-interest field, cost/leverage, DSR inputs); re-run pending: reports/ADDENDUM_2026-09-27.md",
-        "Published run annualised with sqrt(252) over ~313 rows/yr (Sunday and holiday rows)",
-        "'Open interest' in the published run was CME cleared volume (stat_type 6)",
+        "Corrected re-run of 2026-09-28 (code 70d1e03): trade-date calendar, OPEN_INTEREST field, costs and leverage, DSR inputs, and the data fixes of reports/ADDENDUM_2026-09-27.md §10; the published 2026-07-16 figures stay in reports/",
+        "DSR 0.3915 at N_trials = 16 against the 0.95 gate; the gate needs a net Sharpe of about 0.54 (0.53 at N_trials = 14): results/dsr_thresholds.json",
         "Long/short split is an exploratory attribution without a CI"
       ]
     },
@@ -57,46 +56,29 @@
       "section": "archive",
       "hypothesis": "Time-series commodity carry (own-basis sign)",
       "verdict": "NOT PROMOTED",
-      "verdict_detail": "all 5 pre-registered promotion gates fail; figures predate the 2026-09-27 corrections, re-run pending",
-      "mechanism": "sign of own carry has no detectable predictive slope (premise t = 0.30); net Sharpe negative with a 95% CI spanning zero",
+      "verdict_detail": "closed at the sign-only premise gate (Sec 7): the premise point estimate is negative, so no backtest was run; corrected re-run of 2026-09-28 (the published run passed the gate and failed all 5 promotion gates)",
+      "mechanism": "sign of own carry has no detectable predictive slope (premise coefficient negative, t = -0.07); closed before any backtest",
       "stats": [
         {
-          "label": "net Sharpe",
-          "display": "−0.126",
-          "value": -0.1255,
-          "artifact": "reports/PRIMARY_REPORT.md",
-          "locator": "line 72: H2 'Annualized net Sharpe (seed 7, point estimate)'",
-          "provenance": "predates fix; pending re-run"
-        },
-        {
-          "label": "95% CI low",
-          "display": "−0.56",
-          "value": -0.558,
-          "artifact": "reports/PRIMARY_REPORT.md",
-          "locator": "line 73: H2 '95% bootstrap CI' (seed 7)",
-          "provenance": "predates fix; pending re-run"
-        },
-        {
-          "label": "95% CI high",
-          "display": "0.32",
-          "value": 0.3227,
-          "artifact": "reports/PRIMARY_REPORT.md",
-          "locator": "line 73: H2 '95% bootstrap CI' (seed 7)",
-          "provenance": "predates fix; pending re-run"
+          "label": "premise coefficient",
+          "display": "−0.000143",
+          "value": -0.00014335893748681448,
+          "artifact": "results/premise_summary.json",
+          "locator": "json: ts.coefficient",
+          "provenance": "reproduced"
         },
         {
           "label": "premise t (clustered)",
-          "display": "0.30",
-          "value": 0.3,
-          "artifact": "reports/PREMISE_REPORT.md",
-          "locator": "line 74: TS premise 'Clustered t-statistic'",
-          "provenance": "predates fix; pending re-run"
+          "display": "−0.07",
+          "value": -0.06899010415186332,
+          "artifact": "results/premise_summary.json",
+          "locator": "json: ts.tstat",
+          "provenance": "reproduced"
         }
       ],
       "caveats": [
-        "Figures predate the 2026-09-27 corrections (trade-date calendar, open-interest field, cost/leverage, DSR inputs); re-run pending: reports/ADDENDUM_2026-09-27.md",
-        "Published run annualised with sqrt(252) over ~313 rows/yr (Sunday and holiday rows)",
-        "Net Sharpe is reported to 4 dp (-0.1255); -0.126 rounds that figure half away from zero, the 5th decimal is not reported"
+        "Corrected re-run of 2026-09-28 (code 70d1e03); the published 2026-07-16 figures stay in reports/",
+        "No net Sharpe, CI or DSR exists for this arm: it closed at the premise gate"
       ]
     }
   ]

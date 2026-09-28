@@ -1,0 +1,83 @@
+{
+  "generated_utc": "2026-09-28T15:45:07.053867+00:00",
+  "code_version": "70d1e0392f7112042d5855d57df9ca3e54bfda1a",
+  "execution_lag": 0,
+  "months": 193,
+  "month_end_first": "2010-06-30",
+  "month_end_last": "2026-06-30",
+  "trading_days_by_symbol": {
+    "CL": 4066,
+    "HO": 4066,
+    "RB": 4066,
+    "NG": 4066,
+    "GC": 4066,
+    "SI": 4066,
+    "HG": 4066,
+    "PL": 4066,
+    "PA": 4066,
+    "ZC": 4069,
+    "ZS": 4069,
+    "ZW": 4069,
+    "ZM": 4069,
+    "ZL": 4069,
+    "KE": 3174,
+    "LE": 4061,
+    "HE": 4061,
+    "GF": 4061
+  },
+  "statistics_diagnostics": {
+    "n_deleted": 0,
+    "n_weekend_trade_date_dropped": 8,
+    "weekend_trade_date_dropped": [
+      "2011-08-07 instrument_id=197210 stat_type=3",
+      "2011-10-02 instrument_id=66128 stat_type=3",
+      "2011-10-02 instrument_id=66130 stat_type=3",
+      "2011-10-02 instrument_id=1208 stat_type=3",
+      "2011-10-02 instrument_id=66134 stat_type=3",
+      "2011-10-02 instrument_id=66137 stat_type=3",
+      "2011-10-02 instrument_id=66138 stat_type=3",
+      "2014-02-23 instrument_id=819161 stat_type=3"
+    ],
+    "n_files": 5026,
+    "n_undefined_ts_ref": 3,
+    "n_oi_ts_ref_inferred": 1649822,
+    "n_late_settlement_dropped": 2966,
+    "n_late_open_interest_dropped": 2116
+  },
+  "xs": {
+    "mean_ic": 0.028269586343309255,
+    "tstat": 1.3720548556234575,
+    "pvalue": 0.17004636164658438,
+    "n_months": 192,
+    "nw_lags": 3,
+    "gate_passes": true
+  },
+  "ts": {
+    "coefficient": -0.00014335893748681448,
+    "tstat": -0.06899010415186332,
+    "pvalue": 0.9449974964745635,
+    "n_obs": 3414,
+    "gate_passes": false
+  },
+  "sensitivity_execution_lag_1": {
+    "xs": {
+      "mean_ic": 0.029178756098747025,
+      "tstat": 1.396631585645779,
+      "pvalue": 0.16252438696138027,
+      "n_months": 191,
+      "nw_lags": 3,
+      "gate_passes": true
+    },
+    "ts": {
+      "coefficient": -0.0002753052548497343,
+      "tstat": -0.1336355981890463,
+      "pvalue": 0.8936907333671386,
+      "n_obs": 3396,
+      "gate_passes": false
+    }
+  },
+  "gate": {
+    "H1": true,
+    "H2": false
+  }
+}

@@ -45,7 +45,10 @@ def test_stat_is_printed_on_the_cited_line_and_matches_its_display(row_id, stat)
     path = REPO / stat["artifact"]
     assert path.is_file()
     if re.fullmatch(r"\d+/\d+", stat["display"]):
-        _check_variant_count(path, stat)
+        if path.suffix == ".csv":
+            _check_variant_count_csv(path, stat)
+        else:
+            _check_variant_count(path, stat)
         return
     display = stat["display"].replace(MINUS, "-")
     places = Decimal(display).as_tuple().exponent
@@ -78,5 +81,20 @@ def _check_variant_count(path, stat):
     assert len(rows) == 12
     assert sorted({int(r.group(1)) for r in rows}) == [1, 2, 3, 4, 5, 6, 7, 10]
     reaching = sum(float(r.group(3)) >= config.SHARPE_GATE_MIN for r in rows)
+    assert stat["value"] == reaching
+    assert stat["display"] == f"{reaching}/{len(rows)}"
+
+
+def _check_variant_count_csv(path, stat):
+    """"k/n registered variants reaching the gate", counted from the re-run's
+    results/robustness_variants.csv: n is the rows with kind == registered,
+    k those with Sharpe >= the 0.30 gate. In the 2026-09-28 re-run H2 closed
+    at the premise gate, so these are H1's 8 Sec 8 items and its
+    execution-lag-1 series (preregistration/AMENDMENT_2026-09-27.md)."""
+    import csv
+    with path.open(encoding="utf-8") as fh:
+        rows = [r for r in csv.DictReader(fh) if r["kind"] == "registered"]
+    assert rows, "no registered rows"
+    reaching = sum(float(r["sharpe"]) >= config.SHARPE_GATE_MIN for r in rows)
     assert stat["value"] == reaching
     assert stat["display"] == f"{reaching}/{len(rows)}"

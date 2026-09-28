@@ -1,0 +1,18 @@
+id,item,arm,kind,in_n_trials,description,sharpe
+H1,primary,H1,primary,True,Primary H1 (XS),0.05909566785
+R1_sector_neutral_xs,1,H1,registered,True,"Sector-neutral XS (rank within sector, equal sector risk)",0.1586994446
+R2_quintile_xs,2,H1,registered,True,Quintile cutoffs instead of terciles,0.05836650578
+R3_equal_weight_legs,3,H1,registered,True,Equal-weight legs instead of inverse-vol,0.05195580637
+R4_smoothed_carry_H1,4,H1,registered,True,1-month-smoothed carry,0.2312582472
+R5_deferred_carry_H1,5,H1,registered,True,12-month-deferred carry (front vs ~1yr contract),0.1750117541
+R6_2x_cost_H1,6,H1,registered,True,2x cost table,0.03216094149
+R7_fixed_calendar_H1,7,H1,registered,True,Fixed-calendar roll rule,0.1012534425
+R10_ke_excluded,10,H1,registered,True,KE excluded entirely from the universe,0.06028148562
+LAG1_H1,lag-1,H1,registered,True,Execution one trading day after the signal (AMENDMENT_2026-09-27),0.01399116719
+exPAPL_H1,F7,H1,diagnostic,False,PA and PL excluded (F7 diagnostic),-0.1026803558
+jackknife_sector_energy_H1,9,H1,diagnostic,False,energy dropped (drop-one-sector jackknife),0.1807798956
+jackknife_sector_metals_H1,9,H1,diagnostic,False,metals dropped (drop-one-sector jackknife),-0.1260297709
+jackknife_sector_grains_H1,9,H1,diagnostic,False,grains dropped (drop-one-sector jackknife),-0.2193697295
+jackknife_sector_livestock_H1,9,H1,diagnostic,False,livestock dropped (drop-one-sector jackknife),0.1847686289
+subperiod_H1_first,8,H1,diagnostic,False,Sub-period 2010-06-08 to 2018-06-14,0.117256781
+subperiod_H1_second,8,H1,diagnostic,False,Sub-period 2018-06-15 to 2026-06-30,0.00159170441

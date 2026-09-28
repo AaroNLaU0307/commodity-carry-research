@@ -2,7 +2,9 @@
 The Sharpe the DSR gate demands, per arm, at N_trials = 16 (registered, preregistration/AMENDMENT_2026-09-27.md
 §2.3) and at N_trials = 14 (the count before that amendment), from the DSR inputs the primary stage stored in
 results/primary_summary.json (sample length, skewness, excess kurtosis, dispersion of the trial Sharpes).
-Only n_trials differs between the two. Uses src/stats.py::dsr_sharpe_threshold().
+Only n_trials differs between the two. Uses src/stats.py::dsr_sharpe_threshold(). Also writes the
+README power statement's inputs per arm: the bootstrap standard error implied by the seed-7 95% CI
+(width / (2 x 1.96)) and the two-sided 5% / 80%-power minimum detectable Sharpe (SE x 2.8).
 
     python scripts/dsr_thresholds.py      # writes results/dsr_thresholds.json
 
@@ -34,7 +36,10 @@ def main() -> int:
         for n in (16, 14):
             at[str(n)] = stats.dsr_sharpe_threshold(**{**inputs, "n_trials": n})
         assert abs(at["16"] - a["dsr_sharpe_threshold"]) < 1e-12 or inputs["n_trials"] != 16
-        out["arms"][arm] = {"dsr_inputs": inputs, "sharpe_threshold_by_n_trials": at}
+        ci = next(c for c in a["ci_by_seed"] if c["seed"] == config.BOOTSTRAP_SEEDS[0])
+        se = (ci["ci_high"] - ci["ci_low"]) / (2 * 1.96)
+        out["arms"][arm] = {"dsr_inputs": inputs, "sharpe_threshold_by_n_trials": at,
+                            "power": {"se_from_seed7_ci": se, "mde_two_sided_5pct_80pct_power": se * 2.8}}
     OUT.write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(out, indent=2))
     return 0

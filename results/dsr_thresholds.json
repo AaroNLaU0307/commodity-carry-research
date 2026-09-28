@@ -1,0 +1,27 @@
+{
+  "source": "results/primary_summary.json",
+  "dsr_gate": 0.95,
+  "code_version": "70d1e0392f7112042d5855d57df9ca3e54bfda1a",
+  "arms": {
+    "H1": {
+      "dsr_inputs": {
+        "n_trials": 16,
+        "n_obs": 4069,
+        "skew": -0.11129979627591208,
+        "excess_kurtosis": 2.2565692383064127,
+        "sharpe_std_across_trials": 0.07091397306240414
+      },
+      "sharpe_threshold_by_n_trials": {
+        "16": 0.5380884418715018,
+        "14": 0.5336809901847458
+      },
+      "power": {
+        "se_from_seed7_ci": 0.2393154856853971,
+        "mde_two_sided_5pct_80pct_power": 0.6700833599191118
+      }
+    },
+    "H2": {
+      "note": "arm closed at the premise gate; no DSR inputs"
+    }
+  }
+}
