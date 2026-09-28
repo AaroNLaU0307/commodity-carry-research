@@ -112,9 +112,27 @@ def monthly_returns(daily_returns: pd.Series) -> pd.Series:
     return (1.0 + s).groupby(s.index.to_period("M")).prod() - 1.0
 
 
+_PINNED_CODE_VERSION = None
+
+
+def pin_code_version() -> str:
+    """Fix the stamp for the rest of this process to the checkout's state
+    now. scripts/run_all.py calls it before its first stage: each stage
+    rewrites tracked report files under reports/rerun/, so a stamp read
+    after the first stage would see its own output as an uncommitted change
+    and read "-dirty" (addendum §10, 2026-09-28)."""
+    global _PINNED_CODE_VERSION
+    _PINNED_CODE_VERSION = None
+    _PINNED_CODE_VERSION = code_version()
+    return _PINNED_CODE_VERSION
+
+
 def code_version() -> str:
     """git HEAD of this checkout (+ "-dirty" if uncommitted changes), or
-    "unknown" outside a git checkout -- stamped on every report and result."""
+    "unknown" outside a git checkout -- stamped on every report and result.
+    Returns the pinned stamp when pin_code_version() has been called."""
+    if _PINNED_CODE_VERSION is not None:
+        return _PINNED_CODE_VERSION
     try:
         sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=config.REPO_ROOT, capture_output=True,
                              text=True, check=True).stdout.strip()

@@ -212,6 +212,7 @@ def run_stages(stages) -> int:
     import phase1c_primary_backtest as primary_stage
     import phase1c_robustness as robustness_stage
 
+    print(f"code version (pinned for every stage of this run): {study.pin_code_version()}", flush=True)
     ctx = None
     if any(s in stages for s in ("premise", "primary", "robustness")):
         try:

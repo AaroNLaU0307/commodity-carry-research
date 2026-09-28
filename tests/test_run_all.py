@@ -195,3 +195,27 @@ def test_check_data_prints_both_quantity_stats_and_the_sunday_resend(tmp_path, m
     assert "glbx-mdp3-20200419.statistics.dbn.zst" in out and "(Sunday)" in out
     assert "pipeline value (last received): 18.27" in out
     sys.modules.pop("run_all", None)
+
+
+def test_run_all_pins_the_code_version_before_the_first_stage(monkeypatch):
+    """Stages rewrite tracked files under reports/rerun/; the stamp must be
+    taken once, before the first stage, so later stages are not stamped
+    "-dirty" by the run's own output (addendum §10, 2026-09-28). Git is
+    faked: clean at the first status call, a modified tracked file after."""
+    import types
+    from src import study
+    status_calls = []
+
+    def fake_run(cmd, **kwargs):
+        if cmd[:2] == ["git", "rev-parse"]:
+            return types.SimpleNamespace(stdout="abc123\n")
+        status_calls.append(cmd)
+        return types.SimpleNamespace(stdout="" if len(status_calls) == 1 else " M reports/rerun/PREMISE_REPORT.md\n")
+
+    monkeypatch.setattr(study.subprocess, "run", fake_run)
+    monkeypatch.setattr(study, "_PINNED_CODE_VERSION", None)
+    assert study.pin_code_version() == "abc123"
+    assert study.code_version() == "abc123"          # pinned: no further git call
+    assert len(status_calls) == 1
+    monkeypatch.setattr(study, "_PINNED_CODE_VERSION", None)
+    assert study.code_version() == "abc123-dirty"    # unpinned, the run's own output would read dirty
