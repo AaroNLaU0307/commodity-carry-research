@@ -1,4 +1,8 @@
 """
+Historical: run it at commit 808c472, where "replacement" below is the previous-weekday rule
+(withdrawn by the delegate decision of 2026-09-28T06:47:48Z). At later commits the pipeline's rule
+is the settlement-anchored one, so both legs would be the same rule.
+
 Read-only materiality check for the OPEN_INTEREST dating rule (delegate decision of
 2026-09-28T04:57:40Z, item 3; reports/ADDENDUM_2026-09-27.md §10).
 

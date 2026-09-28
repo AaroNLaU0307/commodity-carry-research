@@ -1,4 +1,7 @@
 """
+Historical: validated the previous-weekday rule, withdrawn by the delegate decision of
+2026-09-28T06:47:48Z; run it at commit 808c472, where the pipeline's rule is the one it describes.
+
 Read-only validation of the OPEN_INTEREST trade-date rule for records without ts_ref (delegate decision
 of 2026-09-28T04:57:40Z, reports/ADDENDUM_2026-09-27.md §10), before any pipeline stage runs. The
 settlement-anchored rule it replaces was validated by this script's version at commit 1bf51d2.

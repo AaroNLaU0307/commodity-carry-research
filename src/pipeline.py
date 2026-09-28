@@ -143,32 +143,34 @@ def statistics_records(stats_df: pd.DataFrame) -> pd.DataFrame:
     })
 
 
-def infer_missing_oi_trade_dates(records: pd.DataFrame, file_date, latest: dict | None = None) -> tuple:
-    """Trade date for OPEN_INTEREST records that carry no `ts_ref` (DATA_FIX,
-    delegate decision of 2026-09-28T04:57:40Z, reports/ADDENDUM_2026-09-27.md
-    §10; it replaces the settlement-anchored rule of 2026-09-27T19:54:48Z).
-    In this corpus every OPEN_INTEREST record delivered before 2015-11-20 has
-    no `ts_ref`; from then on each carries the trade date it reports, which
-    is normally the weekday before the file's UTC date. Such a record is
-    dated to the previous weekday (Monday to Friday, holidays included)
-    before `file_date`, the UTC date in the name of the file it arrives in;
-    Saturday and Sunday files map to the preceding Friday. Records that carry
-    a `ts_ref` keep it; settlements are never changed. `latest` is accepted
-    for a common signature and not used.
+def infer_missing_oi_trade_dates(records: pd.DataFrame, file_date, latest: dict) -> tuple:
+    """Trade date for OPEN_INTEREST records that carry no `ts_ref` (DATA_FIX;
+    rule of 2026-09-27T19:54:48Z, reinstated by the delegate decision of
+    2026-09-28T06:47:48Z; reports/ADDENDUM_2026-09-27.md §10). In this
+    corpus every OPEN_INTEREST record delivered before 2015-11-20 has no
+    `ts_ref`; from then on each carries it. Such a record is dated to the
+    latest trade date for which the same instrument has a SETTLEMENT_PRICE
+    record received before the OI record's `ts_recv` (earlier in this file,
+    or in an earlier file via `latest`, keyed (instrument_id,
+    SETTLEMENT_PRICE)). The pre-2015 feed publishes no open interest for
+    exchange holidays, so the batch arriving after a holiday is the
+    pre-holiday day's, which this rule dates correctly. Records that carry a
+    `ts_ref` keep it; settlements are never changed. A record with no earlier
+    settlement for its instrument stays undated. Must run before
+    drop_late_records() updates `latest` for this file. `file_date` is
+    accepted for a common signature and not used.
 
     Returns (records, n_inferred)."""
-    r = records.copy()
+    r = records.sort_values("ts_recv", kind="stable").copy()
+    is_settle = r["stat_type"] == SETTLEMENT_STAT_TYPE
+    running = r["date"].where(is_settle).groupby(r["instrument_id"], sort=False).cummax()
+    running = running.groupby(r["instrument_id"], sort=False).ffill()
+    carried = pd.Series([latest.get((i, SETTLEMENT_STAT_TYPE), pd.NaT) for i in r["instrument_id"]],
+                        index=r.index, dtype="datetime64[ns]")
+    prior_settle = pd.concat([running, carried], axis=1).max(axis=1)
     missing = (r["stat_type"] == OPEN_INTEREST_STAT_TYPE) & r["date"].isna()
-    if file_date is None:
-        return r, 0
-    r.loc[missing, "date"] = previous_weekday(file_date)
-    return r, int(missing.sum())
-
-
-def previous_weekday(file_date) -> pd.Timestamp:
-    """The weekday (Mon-Fri, holidays included) before `file_date`; for a
-    Saturday or Sunday, the preceding Friday."""
-    return (pd.Timestamp(file_date).normalize() - pd.offsets.BDay(1)).normalize()
+    r.loc[missing, "date"] = prior_settle[missing]
+    return r, int((missing & r["date"].notna()).sum())
 
 
 def thin_statistics_records(stats_df: pd.DataFrame, latest: dict | None = None, file_date=None) -> tuple:
@@ -181,8 +183,7 @@ def thin_statistics_records(stats_df: pd.DataFrame, latest: dict | None = None, 
     is undefined (NaT) cannot be placed on a trade date and are dropped;
     their count is returned so the caller can report it rather than lose it
     silently. With `latest`, OPEN_INTEREST records without a `ts_ref` are
-    first dated by infer_missing_oi_trade_dates() from `file_date` (the UTC
-    date in the file's name), then late records are
+    first dated by infer_missing_oi_trade_dates(), then late records are
     removed record by record (drop_late_records()) *before* the within-file
     reduction, so a late record can never displace an earlier valid one.
     Records whose `ts_ref` is a Saturday or Sunday are dropped before either

@@ -113,7 +113,7 @@ def test_deleted_and_undated_statistics_are_not_used(tmp_path):
     """A settlement whose last record is a DELETE is NaN, and a settlement
     with an undefined ts_ref (no trade date) is dropped and counted.
     (Open-interest records without ts_ref are dated instead, see
-    test_pre_2015_open_interest_without_ts_ref_is_dated_to_the_previous_weekday.)"""
+    test_pre_2015_open_interest_without_ts_ref_is_dated_to_the_latest_prior_settlement.)"""
     day = "2020-04-15"
     _write_statistics_files(tmp_path, [
         _stat(7, SETTLE, f"{day} 19:30", day, price=19.87),
@@ -258,18 +258,18 @@ def test_next_day_open_interest_is_kept(tmp_path):
 # Open interest without ts_ref (DATA_FIX, delegate decision
 # 2026-09-27T19:54:48Z; reports/ADDENDUM_2026-09-27.md §10)
 # ---------------------------------------------------------------------------
-def test_pre_2015_open_interest_without_ts_ref_is_dated_to_the_previous_weekday(tmp_path):
+def test_pre_2015_open_interest_without_ts_ref_is_dated_to_the_latest_prior_settlement(tmp_path):
     """Before 2015-11-20 the feed delivers OPEN_INTEREST with no ts_ref, in
     the next UTC day's file (06:00-15:00 UTC on weekdays; Friday's in the
-    Sunday file at ~20:00 UTC and again on Monday). Each is dated to the
-    weekday before its file's date, holidays included (delegate decision of
-    2026-09-28T04:57:40Z): the Tuesday file after the 2014-01-20 MLK holiday
-    carries the holiday session's OI, dated Monday although no settlement
-    exists for it. An OI record that carries a ts_ref keeps it."""
-    tue, wed, thu, fri, sun, mon = ("2014-06-10", "2014-06-11", "2014-06-12", "2014-06-13",
-                                    "2014-06-15", "2014-06-16")
+    Sunday file at ~20:00 UTC and again on Monday), and publishes no open
+    interest on exchange holidays: after MLK 2014-01-20 the Tuesday batch is
+    Friday's. Each record is dated to the latest trade date for which its
+    instrument has a settlement received earlier (rule reinstated by the
+    delegate decision of 2026-09-28T06:47:48Z). An OI record that carries a
+    ts_ref keeps it; one with no earlier settlement stays undated."""
+    wed, thu, fri, sun, mon = "2014-06-11", "2014-06-12", "2014-06-13", "2014-06-15", "2014-06-16"
     _write_statistics_files(tmp_path, [
-        _stat(5, OPEN_INTEREST, f"{wed} 06:07", None, quantity=900),       # -> Tuesday
+        _stat(5, OPEN_INTEREST, f"{wed} 06:07", None, quantity=1),         # no settlement yet: undated
         _stat(5, SETTLE, f"{wed} 18:30", wed, price=100.0),
         _stat(5, OPEN_INTEREST, f"{thu} 06:07", None, quantity=1000),      # -> Wednesday
         _stat(5, SETTLE, f"{thu} 18:30", thu, price=101.0),
@@ -282,15 +282,18 @@ def test_pre_2015_open_interest_without_ts_ref_is_dated_to_the_previous_weekday(
         _stat(6, SETTLE, f"{mon} 18:31", mon, price=50.0),
         _stat(6, OPEN_INTEREST, f"{mon} 18:40", fri, quantity=77),         # carries ts_ref: kept as Friday
         _stat(7, SETTLE, "2014-01-17 18:30", "2014-01-17", price=60.0),   # Friday before MLK
-        _stat(7, OPEN_INTEREST, "2014-01-21 14:10", None, quantity=555),   # Tuesday file -> MLK Monday
+        _stat(7, OPEN_INTEREST, "2014-01-19 21:00", None, quantity=550),   # Sunday -> Friday
+        _stat(7, OPEN_INTEREST, "2014-01-21 14:10", None, quantity=555),   # Tuesday after MLK -> Friday
+        _stat(7, SETTLE, "2014-01-21 18:30", "2014-01-21", price=61.0),
     ])
     panel = build_settlement_oi_panel(tmp_path)
     oi = panel.dropna(subset=["oi"]).set_index(["instrument_id", "date"])["oi"]
-    assert oi.to_dict() == {(5, pd.Timestamp(tue)): 900, (5, pd.Timestamp(wed)): 1000,
-                            (5, pd.Timestamp(thu)): 1100, (5, pd.Timestamp(fri)): 1190,
-                            (6, pd.Timestamp(fri)): 77, (7, pd.Timestamp("2014-01-20")): 555}
+    assert oi.to_dict() == {(5, pd.Timestamp(wed)): 1000, (5, pd.Timestamp(thu)): 1100,
+                            (5, pd.Timestamp(fri)): 1190, (6, pd.Timestamp(fri)): 77,
+                            (7, pd.Timestamp("2014-01-17")): 555}
+    assert pd.Timestamp("2014-01-20") not in set(panel["date"])
     assert panel.attrs["diagnostics"]["n_oi_ts_ref_inferred"] == 6
-    assert panel.attrs["diagnostics"]["n_undefined_ts_ref"] == 0
+    assert panel.attrs["diagnostics"]["n_undefined_ts_ref"] == 1
     assert panel.attrs["diagnostics"]["n_late_open_interest_dropped"] == 0
 
 
