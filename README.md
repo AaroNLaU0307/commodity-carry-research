@@ -189,7 +189,7 @@ sample. Source: `docs/DATA_QA_REPORT.md` finding F11 (census artifact
 Part of a falsification-first research series across asset classes and strategy families:
 
 - [`multi-asset-tsmom-research`](https://github.com/AaroNLaU0307/multi-asset-tsmom-research) - time-series momentum across asset classes, **supported, not independently confirmed** (net Sharpe 0.75 at 2 bps, 95% bootstrap CI [0.29, 1.23] excludes zero); XSMOM falsified and four overlay studies not promoted.
-- [`quant-backtest-framework`](https://github.com/AaroNLaU0307/quant-backtest-framework) - multi-instrument SMC price-action study, **falsified** (0/210 cross-instrument BH-FDR across 5 instruments x 42 configs; these figures predate the fix of two look-ahead paths in its engine, re-run pending).
+- [`quant-backtest-framework`](https://github.com/AaroNLaU0307/quant-backtest-framework) - multi-instrument SMC price-action study, **falsified** (0/210 cross-instrument BH-FDR across 5 instruments x 42 configs; walk-forward pooled OOS E[R] −0.329 R; re-run on the engine corrected on 2026-09-27, verdict held: [`results/headline.json`](https://github.com/AaroNLaU0307/quant-backtest-framework/blob/main/results/headline.json)).
 - [`orderflow-research-engine`](https://github.com/AaroNLaU0307/orderflow-research-engine) - order-flow footprint signals on BTC/ETH perps, **null** (0/20 cells survive BH-FDR; H3 and H6 underpowered under the pre-registered event-count gate; no OOS return statistic computed or reported).
 - [`spot-mfi-btc-perp-research`](https://github.com/AaroNLaU0307/spot-mfi-btc-perp-research) - spot money-flow signals for BTC perps, base study **falsified** (0/42 BH-FDR); funding-divergence follow-up **inconclusive, leaning falsified**.
 
