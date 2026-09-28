@@ -364,3 +364,28 @@ def test_sunday_dated_settlement_is_dropped_as_read_and_leaves_friday_intact(tmp
     assert diag["n_weekend_trade_date_dropped"] == 1
     assert diag["weekend_trade_date_dropped"] == [f"{sun} instrument_id=819161 stat_type={int(SETTLE)}"]
     assert diag["n_late_settlement_dropped"] == 0
+
+
+def test_holiday_morning_open_interest_batch_is_dated_to_the_previous_settled_day(tmp_path):
+    """The 2012-01-02 pattern (New Year's Day observed, no settlement dated
+    that day): the pre-holiday day's open interest is first published on the
+    holiday morning with no ts_ref (07:00 and 12:00 UTC), and revised in the
+    next day's batch. Every record is dated to the previous settled day,
+    Friday 2011-12-30, the revised value is kept, and no holiday row is
+    created (delegate decision of 2026-09-28T14:12:31Z)."""
+    fri, hol, tue = "2011-12-30", "2012-01-02", "2012-01-03"
+    _write_statistics_files(tmp_path, [
+        _stat(9, SETTLE, f"{fri} 19:30", fri, price=98.83),
+        _stat(9, OPEN_INTEREST, f"{hol} 07:00", None, quantity=300100),   # holiday morning -> Friday
+        _stat(9, OPEN_INTEREST, f"{hol} 12:00", None, quantity=300100),
+        _stat(9, OPEN_INTEREST, f"{tue} 07:00", None, quantity=300100),   # next day's batch -> Friday
+        _stat(9, OPEN_INTEREST, f"{tue} 14:00", None, quantity=299870),   # revised
+        _stat(9, SETTLE, f"{tue} 19:30", tue, price=102.96),
+    ])
+    panel = build_settlement_oi_panel(tmp_path)
+    assert set(panel["date"]) == {pd.Timestamp(fri), pd.Timestamp(tue)}
+    friday = panel.set_index("date").loc[pd.Timestamp(fri)]
+    assert friday["oi"] == pytest.approx(299870)
+    assert friday["settlement"] == pytest.approx(98.83)
+    assert panel.attrs["diagnostics"]["n_oi_ts_ref_inferred"] == 4
+    assert panel.attrs["diagnostics"]["n_undefined_ts_ref"] == 0
